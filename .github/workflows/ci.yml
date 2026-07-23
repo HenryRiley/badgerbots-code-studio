@@ -34,6 +34,11 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Install pinned Rust checks
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.96.1
+
       - name: Install Tauri Linux prerequisites
         run: |
           sudo apt-get update
@@ -69,6 +74,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Install pinned Rust checks
+        shell: pwsh
+        run: |
+          rustup toolchain install 1.96.1 --profile minimal --component clippy,rustfmt
+          rustup default 1.96.1
 
       - name: Install and verify
         run: |
