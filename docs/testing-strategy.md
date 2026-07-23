@@ -19,6 +19,11 @@ Checkpoint 3 adds signed-envelope tamper/scope/expiry/replay tests; headless ato
 
 Checkpoint 4 adds TypeScript tests for fail-closed Host readiness, ordered setup, server lifecycle, crash recovery, active-camp power intent, and diagnostic redaction. Rust tests and Clippy cover the Tauri command/state boundary and native initial state. The production frontend is visually inspected for explicit preview labelling, disabled infrastructure controls, setup progression, and console errors. Windows CI is responsible for building the unsigned NSIS prototype and checksum; CI success does not replace the physical Windows install/repair/upgrade/uninstall matrix.
 
+The first Checkpoint 6 slice adds provider-neutral tests for help-request
+deduplication, acknowledgement/resolution, tolerant progress upserts, minimal roster
+projection, audit/realtime hints, and cross-session denial. A real provider,
+authenticated dashboard, and multi-browser synchronization test remain required.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

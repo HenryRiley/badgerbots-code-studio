@@ -29,4 +29,17 @@ pnpm verify
 pnpm build
 ```
 
+## Reclaim local disk space
+
+```sh
+pnpm clean
+pnpm clean:all
+```
+
+`clean` removes reproducible build output such as Rust `target`, Next/Vite output,
+Turbo caches, and coverage directories. `clean:all` also removes workspace
+`node_modules`; run `pnpm install --frozen-lockfile` or bootstrap again before the
+next development session. Neither command deletes source, configuration, local app
+data, Git history, worlds, or curriculum material.
+
 Current limitations: Docker/PostgreSQL/Supabase CLI are absent on the development Mac, so Checkpoint 2 migration and RLS tests are static/local only. Paper/Tauri/Gradle projects intentionally begin in later checkpoints, and Windows remains the required installer/Minecraft evidence platform.

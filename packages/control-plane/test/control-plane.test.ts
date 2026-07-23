@@ -342,4 +342,130 @@ describe("Checkpoint 2 control plane", () => {
       }),
     ).toThrowError(/authorization was rejected/);
   });
+
+  it("creates one open help request and lets assigned instructors acknowledge and resolve it", async () => {
+    const { service, store, joined, assistantId } = await sessionFixture();
+    const actor = {
+      kind: "camper" as const,
+      camperId: joined.camperId,
+      accessToken: joined.accessToken,
+    };
+    const request = service.requestHelp({
+      actor,
+      summary: "My event runs, but the sheep does not drop gold.",
+      correlationId: "cor-help-request",
+    });
+    const duplicate = service.requestHelp({
+      actor,
+      summary: "This second click must not create another request.",
+      correlationId: "cor-help-duplicate",
+    });
+    expect(duplicate.id).toBe(request.id);
+    expect(store.state.helpRequests).toHaveLength(1);
+    expect(store.state.realtimeHints.at(-1)?.topic).toBe("help");
+
+    expect(
+      service.updateHelpRequest({
+        actorInstructorId: assistantId,
+        helpRequestId: request.id,
+        state: "acknowledged",
+        correlationId: "cor-help-acknowledge",
+      }),
+    ).toMatchObject({ state: "acknowledged", acknowledgedByInstructorId: assistantId });
+    const resolved = service.updateHelpRequest({
+      actorInstructorId: assistantId,
+      helpRequestId: request.id,
+      state: "resolved",
+      correlationId: "cor-help-resolve",
+    });
+    expect(resolved.state).toBe("resolved");
+    expect(typeof resolved.resolvedAt).toBe("string");
+  });
+
+  it("upserts instructor progress and exposes a minimal authorized roster projection", async () => {
+    const { service, store, joined, assistantId, created } = await sessionFixture();
+    service.setProgress({
+      actorInstructorId: assistantId,
+      sessionId: created.session.id,
+      camperId: joined.camperId,
+      projectKey: "sheep-city",
+      benchmarkKey: "gold-block-bounce",
+      state: "working",
+      evidence: { source: "manual", noteCount: 1 },
+      correlationId: "cor-progress-working",
+    });
+    service.setProgress({
+      actorInstructorId: assistantId,
+      sessionId: created.session.id,
+      camperId: joined.camperId,
+      projectKey: "sheep-city",
+      benchmarkKey: "gold-block-bounce",
+      state: "complete",
+      evidence: { source: "manual" },
+      correlationId: "cor-progress-complete",
+    });
+    expect(store.state.progressRecords).toHaveLength(1);
+    expect(
+      service.getInstructorRoster({
+        actorInstructorId: assistantId,
+        sessionId: created.session.id,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        camperId: joined.camperId,
+        displayName: "Ada L.",
+        workspaceId: joined.workspaceId,
+        workspaceRevision: 0,
+        projectId: "sheep-city",
+        progressState: "complete",
+      }),
+    ]);
+    expect(
+      JSON.stringify(
+        service.getInstructorRoster({
+          actorInstructorId: assistantId,
+          sessionId: created.session.id,
+        }),
+      ),
+    ).not.toContain("access-token");
+  });
+
+  it("denies help and progress access across session instructor boundaries", async () => {
+    const { service, store, joined, created } = await sessionFixture();
+    const outsiderId = "ins-help-outsider" as InstructorId;
+    const outsiderOrg = "org-help-outsider" as OrganizationId;
+    store.state.instructors.push({
+      id: outsiderId,
+      authUserId: "auth-help-outsider",
+      normalizedEmail: "outsider@example.test",
+      displayEmail: "outsider@example.test",
+    });
+    store.state.memberships.push({
+      organizationId: outsiderOrg,
+      instructorId: outsiderId,
+      role: "owner",
+    });
+    const request = service.requestHelp({
+      actor: {
+        kind: "camper",
+        camperId: joined.camperId,
+        accessToken: joined.accessToken,
+      },
+      correlationId: "cor-help-boundary",
+    });
+    expect(() =>
+      service.updateHelpRequest({
+        actorInstructorId: outsiderId,
+        helpRequestId: request.id,
+        state: "acknowledged",
+        correlationId: "cor-help-cross-tenant",
+      }),
+    ).toThrowError(/not assigned/);
+    expect(() =>
+      service.getInstructorRoster({
+        actorInstructorId: outsiderId,
+        sessionId: created.session.id,
+      }),
+    ).toThrowError(/not assigned/);
+  });
 });

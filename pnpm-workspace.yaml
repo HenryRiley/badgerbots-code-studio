@@ -6,6 +6,11 @@ packages:
 allowBuilds:
   # Next.js uses the pinned sharp binary for deterministic image/build support.
   sharp: true
+overrides:
+  # Next.js 16.2.11 still pins vulnerable build-time transitive versions.
+  # Keep these explicit until the framework's supported ranges include the fixes.
+  postcss: 8.5.21
+  sharp: 0.35.0
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.10.6"
   - "@turbo/darwin-arm64@2.10.6"

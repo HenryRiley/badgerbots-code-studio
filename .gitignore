@@ -2,6 +2,7 @@ node_modules/
 .turbo/
 .next/
 dist/
+build/
 out/
 *.tsbuildinfo
 target/

@@ -13,6 +13,8 @@
     "bootstrap:owner": "pnpm --filter @badgerbots/control-plane bootstrap:owner",
     "build": "turbo run build",
     "check": "pnpm verify",
+    "clean": "sh scripts/clean.sh",
+    "clean:all": "sh scripts/clean.sh --dependencies",
     "dev": "turbo run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

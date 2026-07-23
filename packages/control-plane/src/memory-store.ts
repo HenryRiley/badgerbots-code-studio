@@ -10,6 +10,8 @@ export class MemoryControlPlaneStore {
     campers: [],
     workspaces: [],
     versions: [],
+    progressRecords: [],
+    helpRequests: [],
     audits: [],
     realtimeHints: [],
   };

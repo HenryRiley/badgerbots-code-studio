@@ -84,6 +84,44 @@ export interface ProgramVersion {
   restoredFromVersionId?: ProgramVersionId;
 }
 
+export type ProgressState =
+  "not_started" | "working" | "complete" | "optional_extension" | "needs_attention";
+
+export interface ProgressRecord {
+  id: string;
+  sessionId: SessionId;
+  camperId: CamperId;
+  projectKey: string;
+  benchmarkKey: string;
+  state: ProgressState;
+  evidence: Record<string, string | number | boolean>;
+  decidedByInstructorId: InstructorId;
+  observedAt: string;
+}
+
+export type HelpRequestState = "open" | "acknowledged" | "resolved";
+
+export interface HelpRequest {
+  id: string;
+  sessionId: SessionId;
+  camperId: CamperId;
+  state: HelpRequestState;
+  summary?: string;
+  createdAt: string;
+  acknowledgedByInstructorId?: InstructorId;
+  resolvedAt?: string;
+}
+
+export interface InstructorRosterEntry {
+  camperId: CamperId;
+  displayName: string;
+  workspaceId: WorkspaceId;
+  workspaceRevision: number;
+  projectId: "sheep-city";
+  progressState: ProgressState;
+  helpState?: HelpRequestState;
+}
+
 export interface AuditRecord {
   id: string;
   organizationId: OrganizationId;
@@ -105,6 +143,8 @@ export interface StoreState {
   campers: Camper[];
   workspaces: Workspace[];
   versions: ProgramVersion[];
+  progressRecords: ProgressRecord[];
+  helpRequests: HelpRequest[];
   audits: AuditRecord[];
   realtimeHints: RealtimeHint[];
 }
