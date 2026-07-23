@@ -208,6 +208,12 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  tools/load-simulator:
+    dependencies:
+      "@badgerbots/world-manager":
+        specifier: workspace:*
+        version: link:../../packages/world-manager
+
   tools/repository: {}
 
 packages:

@@ -9,6 +9,7 @@ public final class RuntimeCoreSelfTest {
   public static void main(String[] args) {
     executesSheepCityAndRetainsLastGood();
     cancelsResourcesInReverseOrder();
+    continuesCancellationAfterFailure();
     tripsCircuitBreaker();
     System.out.println("BadgerBots Java runtime core tests passed.");
   }
@@ -89,6 +90,26 @@ public final class RuntimeCoreSelfTest {
       assert "explosion_limit".equals(expected.code());
     }
     assert !scopes.isActive(scope);
+  }
+
+  private static void continuesCancellationAfterFailure() {
+    ExecutionScopeRegistry scopes = new ExecutionScopeRegistry();
+    ScopeKey scope = scope("version-cancellation-failure");
+    scopes.create(scope);
+    List<String> cancelled = new ArrayList<>();
+    scopes.register(scope, () -> cancelled.add("first"));
+    scopes.register(
+        scope,
+        () -> {
+          throw new IllegalStateException("Injected cancellation failure.");
+        });
+    scopes.register(scope, () -> cancelled.add("last"));
+    ExecutionScopeRegistry.StopResult result = scopes.stop(scope);
+    assert result.cancelledResources() == 2;
+    assert result.cancellationFailures() == 1;
+    assert cancelled.equals(List.of("last", "first"));
+    assert scopes.activeScopeCount() == 0;
+    assert scopes.registeredResourceCount() == 0;
   }
 
   private static ScopeKey scope(String version) {
