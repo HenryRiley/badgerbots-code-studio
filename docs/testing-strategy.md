@@ -30,6 +30,12 @@ corrupt-save preservation, and failed writes. Manual browser coverage verifies t
 incomplete editor work survives refresh and rapid tab switching without being treated as
 runnable code.
 
+Checkpoint 7 adds strategy-independent private-world lease/isolation tests, candidate threshold
+and physical-evidence validation, deterministic 25-student workload orchestration, injected
+failure cleanup, Host outage/disk/corruption degradation, bounded redacted queue behavior, and
+TypeScript/Java scope-cancellation continuation. Synthetic metrics test policy only; both
+strategies still require the documented Windows/Paper run before capacity acceptance.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

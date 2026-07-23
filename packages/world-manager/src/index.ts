@@ -3,6 +3,10 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm } from "node:f
 import { join, relative, resolve, sep } from "node:path";
 import { parse } from "yaml";
 
+export * from "./capacity.js";
+export * from "./leases.js";
+export * from "./load-scenario.js";
+
 export interface WorldTemplateManifest {
   schemaVersion: 1;
   id: string;

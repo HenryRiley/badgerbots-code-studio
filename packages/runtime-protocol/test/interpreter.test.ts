@@ -98,6 +98,35 @@ describe("scoped atomic Sheep City runtime", () => {
     expect(() => runtime.execute(scope, { event: "player_move" })).toThrow("No active program");
   });
 
+  it("continues cancellation after one scoped resource throws", () => {
+    const adapter = new FakeMinecraftAdapter();
+    const scopes = new ExecutionScopeRegistry();
+    const runtime = new AtomicProgramRuntime(adapter, scopes);
+    runtime.deploy(scope, "version-one", compileInstructionGraph(sheepCityCompletedExample));
+    const cancelled: string[] = [];
+    scopes.register(
+      { ...scope, programVersionId: "version-one" },
+      { cancel: () => cancelled.push("first") },
+    );
+    scopes.register(
+      { ...scope, programVersionId: "version-one" },
+      {
+        cancel: () => {
+          throw new Error("Injected cancellation failure.");
+        },
+      },
+    );
+    scopes.register(
+      { ...scope, programVersionId: "version-one" },
+      { cancel: () => cancelled.push("last") },
+    );
+    expect(runtime.stop(scope)).toEqual({ cancelledResources: 2, cancellationFailures: 1 });
+    expect(cancelled).toEqual(["last", "first"]);
+    expect(scopes.activeScopeCount()).toBe(0);
+    expect(scopes.registeredResourceCount()).toBe(0);
+    expect(runtime.activeProgramCount()).toBe(0);
+  });
+
   it("trips a circuit breaker and stops the scope", () => {
     const adapter = new FakeMinecraftAdapter();
     const runtime = new AtomicProgramRuntime(adapter, new ExecutionScopeRegistry(), {
