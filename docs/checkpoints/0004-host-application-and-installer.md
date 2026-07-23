@@ -1,6 +1,6 @@
 # Checkpoint 4: Host application and teacher installer
 
-Status: first Host application slice implemented on 2026-07-23. Checkpoint acceptance is not claimed. The Tauri shell, safety model, native persistence, UI, and Windows NSIS CI definition exist; Paper lifecycle, real readiness probes, authentication/pairing, firewall, backups, updates, sleep inhibition, and physical Windows installer evidence remain incomplete.
+Status: first Host application slice implemented and CI-verified on 2026-07-23. Checkpoint acceptance is not claimed. The Tauri shell, safety model, native persistence, UI, and unsigned Windows NSIS prototype exist; Paper lifecycle, real readiness probes, authentication/pairing, firewall, backups, updates, sleep inhibition, and physical Windows installer evidence remain incomplete.
 
 ## Genuinely working locally
 
@@ -11,7 +11,7 @@ Status: first Host application slice implemented on 2026-07-23. Checkpoint accep
 - Diagnostic sanitization for common credentials and email addresses, bounded local event history, and correlation IDs.
 - Tauri Rust commands for reading state and advancing setup. Non-secret state is loaded from the application-local directory and replaced atomically. Native server transitions deliberately return a locked diagnostic.
 - Strict Tauri capability surface (`core:default` only), explicit CSP, distinct application identity, original icons, and pinned JavaScript/Rust dependencies.
-- Windows CI definition for an unsigned per-machine NSIS prototype plus SHA-256 artifact. This workflow has not yet run on GitHub and therefore is not build evidence.
+- Windows CI builds an unsigned per-machine NSIS prototype, records its SHA-256, and retains the internal artifact for 14 days.
 
 ## Automated evidence
 
@@ -28,6 +28,20 @@ npx --yes pnpm@11.16.0 build
 The Host tests cover locked initial state, setup ordering, all readiness gates, valid lifecycle transitions, crash recovery, sleep-inhibition intent cleanup, and diagnostic redaction. Native Rust tests prove the native snapshot starts locked and redacts a secret-shaped event.
 
 The production web bundle was manually inspected in a browser. The seven-step sequence advanced correctly, the next step updated, server controls remained disabled, and no browser console error was emitted.
+
+GitHub Actions run [30037850265](https://github.com/HenryRiley/badgerbots-code-studio/actions/runs/30037850265) passed all three jobs for commit `6030c9b`:
+
+- repository checks on Ubuntu: passed in 6m35s;
+- Windows bootstrap smoke test: passed in 11m06s;
+- unsigned Host NSIS prototype: passed in 14m15s.
+
+Artifact `badgerbots-host-unsigned-windows-x64` contains `BadgerBots Host_0.1.0_x64-setup.exe` and `SHA256SUMS.txt`. The installer checksum was independently recomputed after download and matched:
+
+```text
+8e7182bcfe6917b6c52c3d925ca3561c49c59b49b761df100a59a8ac497b1bf3
+```
+
+The artifact expires on 2026-08-06. A hosted Windows runner proves clean Windows compilation and packaging, not installation or behavior on classroom hardware.
 
 ## Installer/configuration changes
 
@@ -73,7 +87,7 @@ Record the exact commit and artifact SHA-256 for every run.
 | Logs and crash recovery   | Redaction and recovery state tests   | Local model pass; restart drill pending |
 | Backups and updates       | Status/gating contracts              | Implementation pending                  |
 | Scoped firewall and sleep | Explicit locked states               | Implementation pending                  |
-| NSIS installer            | Pinned Windows CI job                | Workflow/physical evidence pending      |
+| NSIS installer            | Clean Windows CI build plus checksum | CI pass; physical evidence pending      |
 
 ## Unresolved issues and next work
 
@@ -81,4 +95,4 @@ Record the exact commit and artifact SHA-256 for every run.
 - Secure pairing must use OS-protected storage with rotation and recovery, not the JSON status store.
 - Readiness needs native RAM/disk/port/network/WebView2/Java measurements and conservative scoring.
 - Backup creation/verification/restore, local outbound queue durability, signed updates/rollback, crash recovery, scoped firewall changes, and active-camp-only sleep inhibition are not implemented.
-- A GitHub Windows run and physical Windows 10/11 test record are required before this checkpoint can be accepted.
+- A physical Windows 10/11 test record is required before this checkpoint can be accepted.
