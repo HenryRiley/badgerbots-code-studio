@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BadgerBots Host",
+  "version": "0.1.0",
+  "identifier": "org.badgerbots.codestudio.host",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "BadgerBots Host",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 650,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "BadgerBots",
+    "copyright": "Copyright BadgerBots",
+    "category": "Education",
+    "shortDescription": "Teacher-laptop host for BadgerBots Code Studio",
+    "longDescription": "Manages the local BadgerBots Minecraft classroom runtime on supported Windows teacher laptops.",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["English"]
+      }
+    }
+  }
+}

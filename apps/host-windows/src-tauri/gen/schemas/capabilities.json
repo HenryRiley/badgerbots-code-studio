@@ -1,0 +1,9 @@
+{
+  "main-window": {
+    "identifier": "main-window",
+    "description": "Minimal core capability for the BadgerBots Host main window",
+    "local": true,
+    "windows": ["main"],
+    "permissions": ["core:default"]
+  }
+}

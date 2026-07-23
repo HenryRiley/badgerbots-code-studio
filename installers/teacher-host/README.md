@@ -1,5 +1,18 @@
 # Teacher Host installer
 
-Planned signed Windows installer (unsigned prototypes will trigger SmartScreen). It bundles/verifies Java, installs Host and the managed Paper/plugin distribution, creates shortcuts and service data, requests scoped firewall access, registers updates, and launches a first-run wizard.
+Checkpoint 4 uses Tauri 2 to produce an x64 NSIS `-setup.exe` on the pinned Windows CI runner. The prototype is configured as an intentional per-machine install and uses the system-serviced WebView2 runtime with the Evergreen bootstrapper fallback.
 
-Wizard: sign in, name location, hardware test, server configuration, teacher Minecraft mapping, firewall/network verification, test server, readiness report.
+The pull-request workflow builds an **unsigned internal prototype**, records its SHA-256, and retains the artifact for 14 days. It is not a production release and may trigger Microsoft SmartScreen. Production distribution remains blocked on BadgerBots code-signing credentials, signature/timestamp verification, authenticated updates, repair/upgrade/uninstall testing, and physical Windows 10/11 evidence.
+
+The current installer contains only the Host application shell. It does not bundle Java, Paper, the plugin, or a world because their exact artifacts, licenses, and checksums are unresolved. It does not create a firewall rule. Adding those operations before their verification gates pass would turn a visible limitation into a supply-chain or machine-configuration risk.
+
+## Retrieving a CI prototype
+
+1. Open the GitHub pull request and select its **Checks** tab.
+2. Open **Unsigned Host NSIS prototype**.
+3. Download `badgerbots-host-unsigned-windows-x64` from the workflow artifacts.
+4. Verify the installer against the included `SHA256SUMS.txt` before testing.
+
+## Required physical test record
+
+Use `docs/checkpoints/0004-host-application-and-installer.md`. A non-developer must eventually complete sign-in, location, hardware, server configuration, teacher mapping, scoped firewall approval, test server, and Ready without editing configuration files. The present preview cannot pass that acceptance journey.

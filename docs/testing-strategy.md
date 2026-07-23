@@ -17,6 +17,8 @@ Checkpoint 2 adds provider-neutral service tests for bootstrap, roles, minimal j
 
 Checkpoint 3 adds signed-envelope tamper/scope/expiry/replay tests; headless atomic deployment, last-good retention, action attribution, cancellation, and circuit-breaker tests; a dependency-free Java 21 core self-test; and immutable template/checksum/reset tests. Paper-specific Java sources are outside the dependency-free compilation path. A resolved Paper API build, real server behavior, durable replay across restart, Windows networking, and scope leak/soak evidence remain required-environment tests.
 
+Checkpoint 4 adds TypeScript tests for fail-closed Host readiness, ordered setup, server lifecycle, crash recovery, active-camp power intent, and diagnostic redaction. Rust tests and Clippy cover the Tauri command/state boundary and native initial state. The production frontend is visually inspected for explicit preview labelling, disabled infrastructure controls, setup progression, and console errors. Windows CI is responsible for building the unsigned NSIS prototype and checksum; CI success does not replace the physical Windows install/repair/upgrade/uninstall matrix.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.
