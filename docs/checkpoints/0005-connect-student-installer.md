@@ -23,6 +23,16 @@ npx --yes pnpm@11.16.0 verify
 
 TypeScript tests cover readiness, instructor-only mapping, username validation, managed target isolation, checksum gating, and redaction. Rust tests cover identity stability, corrupt-state rejection, and launcher-directory detection.
 
+Windows CI run
+[`30043933390`](https://github.com/HenryRiley/badgerbots-code-studio/actions/runs/30043933390)
+at commit `25ed7b24df999c3ee956eeae58d795e9fe0ff9db` produced the unsigned
+`BadgerBots Connect_0.1.0_x64-setup.exe` artifact. The installer job passed in
+15 minutes 15 seconds. Its independently verified SHA-256 is
+`3cbc924f6772200952067bde2b33fdff4d5041ce21348435c5ec7a87970d88e0`.
+The GitHub Actions artifact expires on 2026-08-06. This proves a Windows runner
+can compile and package the installer; it does not replace the physical test
+matrix below.
+
 ## Security and privacy
 
 - The opaque device ID is not a camper identity and is not a credential.
@@ -40,7 +50,7 @@ TypeScript tests cover readiness, instructor-only mapping, username validation, 
 | Prism/MultiMC detection                | Standard Prism root and fixture tests  | Prism slice; portable/MultiMC pending  |
 | Managed profile/mod/server entry       | Isolated target and checksum gate      | Actual artifacts/install pending       |
 | Connection/readiness status            | Fail-closed evidence model and UI      | Minecraft signal integration pending   |
-| Windows installer/update/repair        | Per-user NSIS CI definition            | CI and physical evidence pending       |
+| Windows installer/update/repair        | Per-user NSIS artifact + SHA-256        | CI pass; physical evidence pending     |
 
 ## Physical Windows matrix
 
