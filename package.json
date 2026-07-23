@@ -1,0 +1,42 @@
+{
+  "name": "badgerbots-code-studio",
+  "version": "0.0.0",
+  "private": true,
+  "description": "BadgerBots Code Studio monorepo",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=24.18.0 <27",
+    "pnpm": "11.16.0"
+  },
+  "scripts": {
+    "bootstrap": "node tools/repository/src/preflight.mjs && pnpm install --frozen-lockfile && pnpm verify",
+    "bootstrap:owner": "pnpm --filter @badgerbots/control-plane bootstrap:owner",
+    "build": "turbo run build",
+    "check": "pnpm verify",
+    "dev": "turbo run dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "metadata:check": "node tools/repository/src/validate-metadata.mjs",
+    "repository:test": "node --test tools/repository/test/*.test.mjs",
+    "secret:scan": "node tools/repository/src/secret-scan.mjs",
+    "test": "turbo run test && pnpm repository:test",
+    "test:e2e": "turbo run test:e2e",
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm format:check && pnpm lint && pnpm metadata:check && pnpm typecheck && pnpm test && pnpm secret:scan"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "10.7.0",
+    "fast-check": "4.9.0",
+    "prettier": "3.9.6",
+    "turbo": "2.10.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
+  }
+}

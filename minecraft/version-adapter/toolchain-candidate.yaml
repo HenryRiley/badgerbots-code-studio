@@ -1,0 +1,19 @@
+schemaVersion: 1
+status: spike-candidate
+minecraftVersion: 1.21.11
+paper:
+  apiCoordinate: io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT
+  serverBuild: pending
+  serverSha256: pending
+java:
+  languageLevel: 21
+  vendor: pending-redistribution-review
+  runtimeArchiveSha256: pending
+gradle:
+  version: 9.6.1
+  wrapperSha256: pending
+client:
+  loader: pending
+  loaderVersion: pending
+  profileLaunchEvidence: pending
+releaseReady: false

@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+  - minecraft/*
+allowBuilds:
+  # Next.js uses the pinned sharp binary for deterministic image/build support.
+  sharp: true
+minimumReleaseAgeExclude:
+  - "@turbo/darwin-64@2.10.6"
+  - "@turbo/darwin-arm64@2.10.6"
+  - "@turbo/linux-64@2.10.6"
+  - "@turbo/linux-arm64@2.10.6"
+  - "@turbo/windows-64@2.10.6"
+  - "@turbo/windows-arm64@2.10.6"
+  - turbo@2.10.6

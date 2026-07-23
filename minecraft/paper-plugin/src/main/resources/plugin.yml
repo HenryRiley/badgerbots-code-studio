@@ -1,0 +1,7 @@
+name: BadgerBotsCodeStudio
+version: 0.1.0-checkpoint3
+main: org.badgerbots.studio.paper.BadgerBotsPlugin
+description: Scoped BadgerBots educational runtime for Minecraft
+author: BadgerBots
+api-version: "1.21.11"
+load: POSTWORLD

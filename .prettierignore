@@ -1,0 +1,15 @@
+.git
+.turbo
+.next
+coverage
+dist
+out
+*.tsbuildinfo
+installers/artifacts
+node_modules
+target
+work
+worlds/backups
+worlds/local
+curriculum/source-material/*.pdf
+curriculum/source-material/*.pptx

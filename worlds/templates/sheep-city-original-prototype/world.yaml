@@ -1,0 +1,8 @@
+schemaVersion: 1
+id: sheep-city-original-prototype
+status: asset-required
+minecraftVersion: pending-version-spike
+spawn: pending
+worldBorder: pending
+preGenerated: true
+resetPolicy: restore-from-immutable-template

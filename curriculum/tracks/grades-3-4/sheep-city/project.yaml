@@ -1,0 +1,28 @@
+schemaVersion: 1
+id: sheep-city
+title: Sheep City
+day: 1
+status: vertical-slice-target
+sourceProvenance: badgerbots-curriculum-slides-pending-local-intake
+scripts:
+  - player
+  - game
+  - sheep-entity
+mechanics:
+  - projectile-hit event and explosion
+  - movement event and material detection
+  - bouncy gold blocks
+  - configured red fast sheep
+  - sheep gold drops
+benchmarks:
+  - id: successful-run
+    mode: automatic
+  - id: projectile-explosion-present
+    mode: structural
+  - id: gold-block-bounce-present
+    mode: structural
+  - id: sheep-behavior-present
+    mode: structural
+  - id: instructor-observed-play
+    mode: manual
+worldTemplate: sheep-city-original-prototype

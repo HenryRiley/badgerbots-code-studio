@@ -1,0 +1,22 @@
+{
+  "name": "@badgerbots/block-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@badgerbots/java-dsl": "workspace:*",
+    "@badgerbots/program-model": "workspace:*",
+    "blockly": "13.1.1"
+  }
+}

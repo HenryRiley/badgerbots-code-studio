@@ -1,0 +1,10 @@
+{
+  "name": "@badgerbots/paper-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "sh scripts/compile-core.sh",
+    "test": "sh scripts/test-core.sh",
+    "typecheck": "sh scripts/compile-core.sh"
+  }
+}

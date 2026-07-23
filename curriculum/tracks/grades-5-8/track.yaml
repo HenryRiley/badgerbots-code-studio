@@ -1,0 +1,13 @@
+schemaVersion: 1
+id: minecraft-modding-grades-5-8
+title: Minecraft Modding - Grades 5-8
+status: source-verification-required
+projects:
+  - vanilla-plus
+  - spartan-school
+  - wizarding-101
+  - zombie-tag
+  - lucky-blocks
+notes:
+  - Vanilla+ was described as an approximately 11-step project.
+  - Older-track concepts include setup, fields, custom methods, recurring logic, switches, and commands.
