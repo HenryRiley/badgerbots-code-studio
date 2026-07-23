@@ -50,7 +50,7 @@ matrix below.
 | Prism/MultiMC detection                | Standard Prism root and fixture tests  | Prism slice; portable/MultiMC pending  |
 | Managed profile/mod/server entry       | Isolated target and checksum gate      | Actual artifacts/install pending       |
 | Connection/readiness status            | Fail-closed evidence model and UI      | Minecraft signal integration pending   |
-| Windows installer/update/repair        | Per-user NSIS artifact + SHA-256        | CI pass; physical evidence pending     |
+| Windows installer/update/repair        | Per-user NSIS artifact + SHA-256       | CI pass; physical evidence pending     |
 
 ## Physical Windows matrix
 
