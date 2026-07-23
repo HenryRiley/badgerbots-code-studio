@@ -16,7 +16,9 @@ public final class RuntimeCoreSelfTest {
   private static void executesSheepCityAndRetainsLastGood() {
     RecordingAdapter adapter = new RecordingAdapter();
     ExecutionScopeRegistry scopes = new ExecutionScopeRegistry();
-    AtomicProgramRuntime runtime = new AtomicProgramRuntime(adapter, scopes);
+    AtomicProgramRuntime runtime =
+        new AtomicProgramRuntime(
+            adapter, scopes, new RuntimeLimits(8, 64, 1, 16, 1_000_000_000L));
     ScopeKey scope = scope("version-one");
     AtomicProgramRuntime.DeploymentResult deployed = runtime.deploy(scope, graph());
     assert deployed.ok();
@@ -62,7 +64,7 @@ public final class RuntimeCoreSelfTest {
   private static void tripsCircuitBreaker() {
     RecordingAdapter adapter = new RecordingAdapter();
     ExecutionScopeRegistry scopes = new ExecutionScopeRegistry();
-    RuntimeLimits limits = new RuntimeLimits(8, 64, 0, 16, 25_000_000L);
+    RuntimeLimits limits = new RuntimeLimits(8, 64, 0, 16, 1_000_000_000L);
     AtomicProgramRuntime runtime = new AtomicProgramRuntime(adapter, scopes, limits);
     ScopeKey scope = scope("version-one");
     InstructionGraph explosionGraph =
