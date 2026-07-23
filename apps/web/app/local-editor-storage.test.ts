@@ -33,6 +33,7 @@ function editorState(): LocalEditorState {
         },
       },
     },
+    textDraft: "class SheepCity {\n  // unfinished instructor edit\n}",
   };
 }
 
@@ -48,6 +49,7 @@ describe("local editor storage", () => {
     expect(loaded.state.workspaceDrafts.player).toMatchObject({
       blocks: { blocks: [{ id: "loose-action" }] },
     });
+    expect(loaded.state.textDraft).toContain("unfinished instructor edit");
   });
 
   it("migrates the previous program-only browser save", () => {

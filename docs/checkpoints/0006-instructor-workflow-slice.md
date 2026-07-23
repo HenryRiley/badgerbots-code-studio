@@ -9,8 +9,9 @@ Checkpoint 6 acceptance is not claimed.
   changes/page hide, and reports storage failures instead of displaying a false
   acknowledgement.
 - The browser stores a non-authoritative Blockly visual draft for each script alongside the
-  canonical AST. Loose or incomplete blocks survive refresh while validation and execution
-  continue to use only the last valid canonical program.
+  canonical AST, plus any unparsed instructor text. Loose blocks, incomplete blocks, and
+  unparsed text survive refresh while validation and execution continue to use only the
+  last valid canonical program.
 - A camper with a valid session access token can create one active help request.
 - Repeated clicks do not flood the queue with duplicate open requests.
 - The session owner or an assigned assistant can acknowledge or resolve help.

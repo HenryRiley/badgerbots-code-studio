@@ -13,6 +13,7 @@ export interface LocalEditorState {
   editorStateVersion: 1;
   program: Program;
   workspaceDrafts: Partial<Record<ScriptKind, WorkspaceDraft>>;
+  textDraft?: string;
 }
 
 interface StorageLike {
@@ -46,7 +47,13 @@ function migrateEditorState(value: unknown): LocalEditorState {
     }
   }
 
-  return { editorStateVersion: 1, program, workspaceDrafts };
+  const textDraft = envelope?.textDraft;
+  return {
+    editorStateVersion: 1,
+    program,
+    workspaceDrafts,
+    ...(typeof textDraft === "string" ? { textDraft } : {}),
+  };
 }
 
 export function loadLocalEditorState(storage: StorageLike): LoadLocalEditorResult {

@@ -97,7 +97,7 @@ export function CompilerHarness() {
         kind,
         message:
           kind === "draft"
-            ? `Visual draft saved at ${time}; connect all blocks to update runnable code`
+            ? `Editor draft saved at ${time}; runnable code remains on the last valid version`
             : `Local program and blocks saved at ${time}`,
       });
       return true;
@@ -111,9 +111,16 @@ export function CompilerHarness() {
       editorStateRef.current = restored.state;
       programRef.current = restored.state.program;
       setProgram(restored.state.program);
-      setText(formatProgram(restored.state.program));
+      setText(restored.state.textDraft ?? formatProgram(restored.state.program));
       setWorkspaceSyncVersion((version) => version + 1);
-      setSaveStatus({ kind: "saved", message: "Restored saved local program and blocks" });
+      setSaveStatus(
+        restored.state.textDraft === undefined
+          ? { kind: "saved", message: "Restored saved local program and blocks" }
+          : {
+              kind: "draft",
+              message: "Restored an editor draft; runnable code remains on the last valid version",
+            },
+      );
       writeConsole("success", "Restored the last acknowledged local program and visual draft.");
       return;
     }
@@ -165,6 +172,7 @@ export function CompilerHarness() {
     }
 
     let pendingCommit: ReturnType<typeof setTimeout> | undefined;
+    let workspaceDirty = false;
     const commitWorkspace = (): boolean => {
       if (pendingCommit) {
         clearTimeout(pendingCommit);
@@ -179,6 +187,10 @@ export function CompilerHarness() {
         ...editorStateRef.current.workspaceDrafts,
         [activeScript]: workspaceDraft,
       };
+      const preservedTextDraft =
+        !workspaceDirty && editorStateRef.current.textDraft !== undefined
+          ? { textDraft: editorStateRef.current.textDraft }
+          : {};
       try {
         const current = getScript(programRef.current, activeScript);
         const script = workspaceToScript(workspace, {
@@ -189,11 +201,16 @@ export function CompilerHarness() {
         const nextProgram = replaceProgramScript(programRef.current, script);
         programRef.current = nextProgram;
         setProgram(nextProgram);
-        persistEditorState({
-          editorStateVersion: 1,
-          program: nextProgram,
-          workspaceDrafts,
-        });
+        persistEditorState(
+          {
+            editorStateVersion: 1,
+            program: nextProgram,
+            workspaceDrafts,
+            ...preservedTextDraft,
+          },
+          preservedTextDraft.textDraft === undefined ? "saved" : "draft",
+        );
+        workspaceDirty = false;
         return true;
       } catch (error) {
         persistEditorState(
@@ -201,9 +218,11 @@ export function CompilerHarness() {
             editorStateVersion: 1,
             program: programRef.current,
             workspaceDrafts,
+            ...preservedTextDraft,
           },
           "draft",
         );
+        workspaceDirty = false;
         writeConsole(
           "error",
           error instanceof Error ? error.message : "Blockly conversion failed.",
@@ -213,8 +232,9 @@ export function CompilerHarness() {
     };
     commitWorkspaceRef.current = commitWorkspace;
     const listener = (event: Blockly.Events.Abstract) => {
-      if (suppressBlocklyEvents.current || event.isUiEvent) return;
+      if (suppressBlocklyEvents.current || event.isUiEvent || !event.recordUndo) return;
       if (pendingCommit) clearTimeout(pendingCommit);
+      workspaceDirty = true;
       setSaveStatus({ kind: "saving", message: "Saving local changes…" });
       pendingCommit = setTimeout(commitWorkspace, 75);
     };
@@ -260,7 +280,7 @@ export function CompilerHarness() {
         writeConsole("error", "Connect or complete all blocks before opening text mode.");
         return;
       }
-      setText(formatProgram(programRef.current));
+      setText(editorStateRef.current.textDraft ?? formatProgram(programRef.current));
     }
     setMode(nextMode);
   };
@@ -435,7 +455,11 @@ export function CompilerHarness() {
                   aria-label="Restricted Java-style program"
                   spellCheck={false}
                   value={text}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setText(value);
+                    persistEditorState({ ...editorStateRef.current, textDraft: value }, "draft");
+                  }}
                 />
                 <button className="primary" type="button" onClick={applyText}>
                   Parse text into blocks
