@@ -16,14 +16,14 @@
     "dev": "turbo run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint .",
+    "lint": "turbo run build --filter=@badgerbots/program-model --filter=@badgerbots/shared-types && eslint .",
     "metadata:check": "node tools/repository/src/validate-metadata.mjs",
     "repository:test": "node --test tools/repository/test/*.test.mjs",
     "secret:scan": "node tools/repository/src/secret-scan.mjs",
     "test": "turbo run test && pnpm repository:test",
     "test:e2e": "turbo run test:e2e",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm format:check && pnpm lint && pnpm metadata:check && pnpm typecheck && pnpm test && pnpm secret:scan"
+    "verify": "pnpm format:check && pnpm metadata:check && pnpm typecheck && pnpm lint && pnpm test && pnpm secret:scan"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
