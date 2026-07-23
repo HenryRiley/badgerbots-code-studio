@@ -24,6 +24,11 @@ deduplication, acknowledgement/resolution, tolerant progress upserts, minimal ro
 projection, audit/realtime hints, and cross-session denial. A real provider,
 authenticated dashboard, and multi-browser synchronization test remain required.
 
+The Checkpoint 6 browser stability correction adds local-storage envelope tests for the
+canonical program plus per-script visual drafts, legacy-save migration, corrupt-save
+preservation, and failed writes. Manual browser coverage verifies that incomplete Blockly
+work survives refresh and rapid tab switching without being treated as runnable code.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

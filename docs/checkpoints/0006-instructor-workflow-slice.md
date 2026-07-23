@@ -5,6 +5,12 @@ Checkpoint 6 acceptance is not claimed.
 
 ## Genuinely working
 
+- Browser autosave now hydrates before writing, flushes pending Blockly edits before tab
+  changes/page hide, and reports storage failures instead of displaying a false
+  acknowledgement.
+- The browser stores a non-authoritative Blockly visual draft for each script alongside the
+  canonical AST. Loose or incomplete blocks survive refresh while validation and execution
+  continue to use only the last valid canonical program.
 - A camper with a valid session access token can create one active help request.
 - Repeated clicks do not flood the queue with duplicate open requests.
 - The session owner or an assigned assistant can acknowledge or resolve help.
@@ -30,6 +36,10 @@ npx --yes pnpm@11.16.0 --filter @badgerbots/web build
 Focused result: 17 control-plane tests pass, including help deduplication,
 acknowledgement/resolution, progress upsert, minimal roster output, and tenant/session
 denial. The production web build also passes with the dependency-alert remediation.
+Five web storage tests cover program/draft round trips, migration of the previous
+program-only save, corrupt data preservation, failed-write reporting, and storage-key
+compatibility. Manual browser verification covered loose action-block persistence across
+refresh, rapid script-tab switching, and rendering the completed connected-action fixture.
 
 ## Not yet working
 

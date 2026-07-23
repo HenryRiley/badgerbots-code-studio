@@ -326,6 +326,26 @@ h1 {
   border-radius: 50%;
   background: var(--bb-green-100);
 }
+.save-state.saving,
+.save-state.loading {
+  color: var(--bb-blue-600);
+}
+.save-state.saving span,
+.save-state.loading span {
+  background: var(--bb-blue-100);
+}
+.save-state.draft {
+  color: #795c12;
+}
+.save-state.draft span {
+  background: #fff1bf;
+}
+.save-state.error {
+  color: #a12c2c;
+}
+.save-state.error span {
+  background: #fde2e2;
+}
 .actions {
   display: flex;
   flex-wrap: wrap;
