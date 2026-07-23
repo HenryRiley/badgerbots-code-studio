@@ -43,6 +43,8 @@ Artifact `badgerbots-host-unsigned-windows-x64` contains `BadgerBots Host_0.1.0_
 
 The artifact expires on 2026-08-06. A hosted Windows runner proves clean Windows compilation and packaging, not installation or behavior on classroom hardware.
 
+On 2026-07-23, the project owner reported that the current tests work on Windows. The exact Windows version, installer log, screenshots, upgrade/uninstall cases, and Paper smoke-test evidence were not captured, so the detailed physical matrix below remains pending. Release builds now use the standard Rust Windows GUI subsystem setting and do not open a terminal window. Operational events appear in the app's redacted **Recent events** panel; developer builds may retain terminal diagnostics.
+
 ## Installer/configuration changes
 
 - Tauri API 2.11.1, CLI 2.11.4, Rust crate 2.11.5, and `tauri-build` 2.6.3 are pinned.

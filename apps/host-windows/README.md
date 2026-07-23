@@ -20,6 +20,8 @@ npx --yes pnpm@11.16.0 --filter @badgerbots/host-windows tauri dev
 
 The native shell stores only non-secret setup/status data under the application-local data directory using atomic replacement. Authentication tokens and pairing credentials are not implemented or persisted in this slice.
 
+Installed release builds use the Windows GUI subsystem, so launching BadgerBots Host does not open a Command Prompt window. Operational events belong in the app's redacted **Recent events** panel. Development builds may still write diagnostics to the terminal that launched them.
+
 ## Checks
 
 ```sh
