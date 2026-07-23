@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal capability surface for the BadgerBots Connect window.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

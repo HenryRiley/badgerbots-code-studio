@@ -5,6 +5,7 @@ dist/
 out/
 *.tsbuildinfo
 target/
+apps/student-connect/src-tauri/gen/
 coverage/
 .env
 .env.*
