@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Blockly,
   blockCatalog,
@@ -358,9 +359,14 @@ export function CompilerHarness() {
             <h1>Sheep City compiler proof</h1>
           </div>
         </div>
-        <div className="proof-badge">
-          <span aria-hidden="true" />
-          Checkpoint 1 · browser only
+        <div className="header-actions">
+          <Link className="header-link" href="/curriculum">
+            Curriculum lab
+          </Link>
+          <div className="proof-badge">
+            <span aria-hidden="true" />
+            Checkpoint 1 · browser only
+          </div>
         </div>
       </header>
 

@@ -36,6 +36,14 @@ failure cleanup, Host outage/disk/corruption degradation, bounded redacted queue
 TypeScript/Java scope-cancellation continuation. Synthetic metrics test policy only; both
 strategies still require the documented Windows/Paper run before capacity acceptance.
 
+Checkpoint 8 adds curriculum document/source/asset schemas, immutable revision history,
+optimistic conflict refusal, owner-only publish authorization, duplication provenance, canonical
+starter-program validation, and source/world publication gates. Browser verification covers the
+local draft -> review -> blocked-publish flow, independent duplication, route navigation,
+responsive layout without horizontal overflow, and console stability. Provider persistence,
+authenticated author roles, source-file ingestion, and publication from a deployed database
+remain required-environment tests.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

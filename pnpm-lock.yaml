@@ -115,6 +115,9 @@ importers:
       "@badgerbots/block-editor":
         specifier: workspace:*
         version: link:../../packages/block-editor
+      "@badgerbots/curriculum-schema":
+        specifier: workspace:*
+        version: link:../../packages/curriculum-schema
       "@badgerbots/java-dsl":
         specifier: workspace:*
         version: link:../../packages/java-dsl
@@ -175,6 +178,9 @@ importers:
 
   packages/curriculum-schema:
     dependencies:
+      "@badgerbots/program-model":
+        specifier: workspace:*
+        version: link:../program-model
       yaml:
         specifier: 2.9.0
         version: 2.9.0
