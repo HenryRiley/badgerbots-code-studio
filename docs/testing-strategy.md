@@ -52,6 +52,13 @@ Browser verification exercises the same workflow through `/prototype`, checks ac
 evidence, confirms Stop disables events, and verifies no horizontal overflow or console errors.
 This is headless runtime evidence; it does not replace the real Paper/Windows test.
 
+Checkpoint 10 compiles the Paper-specific Java boundary with the official 1.21.11 API on Linux and
+Windows CI, runs a strict supported/unsupported instruction-graph decoder proof, verifies pinned
+Gradle and Paper metadata, and provides an EULA-gated one-command real-server journey. Manual
+verification covers real projectile, movement/material, sheep spawn/death, invalid-deploy
+last-known-good, and Stop behavior. Until that journey is recorded on the Windows test PC, this is
+a playable implementation rather than accepted real-environment evidence.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

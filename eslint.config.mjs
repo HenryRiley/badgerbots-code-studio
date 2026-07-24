@@ -9,6 +9,7 @@ export default defineConfig([
       "**/.next/**",
       "**/.turbo/**",
       "**/coverage/**",
+      "**/build/**",
       "**/dist/**",
       "**/node_modules/**",
       "**/out/**",
@@ -37,7 +38,10 @@ export default defineConfig([
       sourceType: "module",
       globals: {
         console: "readonly",
+        clearTimeout: "readonly",
+        fetch: "readonly",
         process: "readonly",
+        setTimeout: "readonly",
         structuredClone: "readonly",
         URL: "readonly",
       },

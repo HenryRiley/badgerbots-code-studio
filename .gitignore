@@ -27,3 +27,4 @@ installers/artifacts/
 *.iml
 .env.local
 .pnpm-store/
+.gradle/

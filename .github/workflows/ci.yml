@@ -50,6 +50,10 @@ jobs:
       - name: Verify repository
         run: pnpm verify
 
+      - name: Compile and test the real Paper plugin
+        working-directory: minecraft/paper-plugin
+        run: ./gradlew --no-daemon check
+
   windows-bootstrap:
     name: Windows bootstrap smoke test
     runs-on: windows-2025
@@ -85,6 +89,11 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm verify
+
+      - name: Compile and test the Paper plugin on Windows
+        working-directory: minecraft/paper-plugin
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon check
 
   host-windows-installer:
     name: Unsigned Host NSIS prototype
