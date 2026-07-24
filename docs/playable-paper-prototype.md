@@ -39,7 +39,8 @@ The first launch downloads checksummed Paper build 132 into ignored `work/paper-
 downloads the pinned Gradle distribution into ignored `work/gradle-home/`, compiles the plugin, and
 starts Paper. Nothing replaces the machine's global Java or Minecraft configuration.
 The Windows commands reuse Corepack's repository-pinned pnpm; pnpm does not need to be installed
-globally.
+globally. The launcher creates a private child-process shim under the ignored prototype work
+directory so Turbo and workspace scripts resolve that same pinned pnpm.
 
 ## Test the complete playable path
 

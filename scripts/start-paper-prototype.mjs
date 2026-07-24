@@ -20,6 +20,7 @@ const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const runtime = path.join(repository, "work", "paper-prototype");
 const bridge = path.join(runtime, "bridge");
 const plugins = path.join(runtime, "plugins");
+const toolBin = path.join(runtime, "tool-bin");
 const paper = path.join(runtime, "paper-1.21.11-132.jar");
 const plugin = path.join(
   repository,
@@ -42,6 +43,11 @@ if (process.env.BADGERBOTS_ACCEPT_MINECRAFT_EULA !== "true") {
 await mkdir(plugins, { recursive: true });
 await mkdir(path.join(bridge, "inbox"), { recursive: true });
 await mkdir(path.join(bridge, "outbox"), { recursive: true });
+const pnpmEntrypoint = process.env.npm_execpath;
+if (!pnpmEntrypoint) {
+  fail("Start this launcher through pnpm so the Web services can be started.");
+}
+await preparePackageManager(pnpmEntrypoint);
 await ensurePaper();
 await buildPlugin();
 await copyFile(plugin, path.join(plugins, "badgerbots-paper-plugin.jar"));
@@ -113,11 +119,6 @@ try {
   fail(error instanceof Error ? error.message : "Paper failed to start.");
 }
 
-const pnpmEntrypoint = process.env.npm_execpath;
-if (!pnpmEntrypoint) {
-  await stopPaper();
-  fail("Start this launcher through pnpm so the Web services can be started.");
-}
 const services = spawn(
   process.execPath,
   [
@@ -131,11 +132,14 @@ const services = spawn(
   ],
   {
     cwd: repository,
-    env: {
-      ...process.env,
-      BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
-      BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
-    },
+    env: withPathPrefix(
+      {
+        ...process.env,
+        BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
+        BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
+      },
+      toolBin,
+    ),
     stdio: "inherit",
   },
 );
@@ -177,6 +181,35 @@ async function ensurePaper() {
     fail("Paper download checksum did not match the pinned release.");
   }
   await rename(temporary, paper);
+}
+
+async function preparePackageManager(entrypoint) {
+  await mkdir(toolBin, { recursive: true });
+  if (process.platform === "win32") {
+    const escapeBatch = (value) => value.replaceAll("%", "%%").replaceAll('"', '""');
+    await writeFile(
+      path.join(toolBin, "pnpm.cmd"),
+      `@echo off\r\n"${escapeBatch(process.execPath)}" "${escapeBatch(entrypoint)}" %*\r\n`,
+      { encoding: "utf8", mode: 0o700 },
+    );
+    return;
+  }
+  const quoteShell = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  const shim = path.join(toolBin, "pnpm");
+  await writeFile(
+    shim,
+    `#!/bin/sh\nexec ${quoteShell(process.execPath)} ${quoteShell(entrypoint)} "$@"\n`,
+    { encoding: "utf8", mode: 0o700 },
+  );
+  await chmod(shim, 0o700);
+}
+
+function withPathPrefix(environment, prefix) {
+  const pathKey = Object.keys(environment).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  return {
+    ...environment,
+    [pathKey]: `${prefix}${path.delimiter}${environment[pathKey] ?? ""}`,
+  };
 }
 
 async function buildPlugin() {
