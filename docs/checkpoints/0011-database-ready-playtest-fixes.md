@@ -1,6 +1,6 @@
 # Checkpoint 11: database-ready playable prototype
 
-Status: implementation complete; Windows retest required
+Status: complete; Windows playtest passed 2026-07-24
 
 ## Working
 
@@ -29,23 +29,17 @@ On a real Windows/Paper run before these fixes:
 - the modular `getMaterialUnder(player) == GOLD_BLOCK` condition executed the jump behavior;
 - the missing equipment and incorrect vanilla-world respawn were reproduced.
 
-This is valuable real-runtime evidence, but the equipment and respawn fixes still require the
-manual retest below.
+The owner subsequently confirmed that the complete Minecraft checklist passed on Windows,
+including the equipment, programmed Sheep City behaviors, fall protection, and Sheep City respawn.
 
 The updated Paper plugin passed `./gradlew --no-daemon check` and assembled with SHA-256
 `353688aae2a692a60adfafcfc1259fc7dafe9c9232f13c949dfb4f6e4b9b1ef8`.
 
-## Manual Windows retest
+## Manual Windows evidence
 
-1. Pull this branch, optionally set `BADGERBOTS_TEACHER_MINECRAFT_USERNAME` to the teacher's exact
-   Java username, and restart `prototype:minecraft` so the plugin JAR is rebuilt.
-2. Join without operator status. Confirm bow, 64 arrows, iron sword, and food appear.
-   If the configured teacher joins, confirm only that account is an operator.
-3. Run the completed program and shoot the archery target.
-4. Walk repeatedly onto gold and confirm no fall damage is taken.
-5. Die from a non-fall source and click Respawn. Confirm you return to the Sheep City plaza with
-   the test kit, not the vanilla world.
-6. Stop the program and confirm the programmed behaviors stop.
+The owner ran the normal PowerShell/Corepack launcher, joined real Paper, and reported that all
+requested Minecraft tests passed. Launcher issues discovered during the test were corrected by
+pinning Java 21 guidance and providing a child-only pnpm shim; no global pnpm install is required.
 
 ## Database verification
 

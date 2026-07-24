@@ -65,9 +65,9 @@ directory so Turbo and workspace scripts resolve that same pinned pnpm.
 
 ## Current limits
 
-- The default local control-plane state is lost at shutdown. Optional Supabase persistence stores
-  normalized session, camper, workspace, and atomic program-version rows, but restoring a browser
-  lab after the local API process restarts is not implemented yet.
+- The default memory-mode control-plane state is lost at shutdown. Optional Supabase persistence
+  stores normalized state and an encrypted four-hour recovery envelope, allowing the browser lab
+  to recover after the local API restarts with the same recovery secret.
 - This prototype targets the first player in one generated Sheep City world.
 - The native Tauri Host does not yet own this lifecycle, so the developer command uses a terminal.
   The finished Windows Host must show the same logs inside the app and launch without a command
@@ -83,18 +83,36 @@ This is optional; the Minecraft prototype does not need a database to run.
 2. Apply, in order:
    `database/migrations/0001_control_plane_core.sql`,
    `database/providers/supabase/0002_supabase_security.sql`, and
-   `database/migrations/0003_atomic_program_version_ids.sql`.
+   `database/migrations/0003_atomic_program_version_ids.sql`, then
+   `database/migrations/0004_prototype_lab_recovery.sql`.
 3. Set these only in the control-plane server environment:
 
    ```text
    BADGERBOTS_PROTOTYPE_PERSISTENCE=supabase
    BB_SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+   BADGERBOTS_PROTOTYPE_RECOVERY_SECRET=32-random-bytes-encoded-as-base64url
+   ```
+
+   Generate the recovery value once and keep it in the same protected server secret store:
+
+   ```powershell
+   node.exe -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
    ```
 
 4. Start the prototype normally. Its status card must say `supabase · synced`.
+   Before starting, run the read-only readiness check:
+
+   ```powershell
+   corepack.cmd pnpm --filter @badgerbots/prototype-control-plane check:database
+   ```
+
 5. In Supabase Table Editor, confirm rows appear in `sessions`, `campers`,
-   `project_workspaces`, and `program_versions` as you create, join, and save.
+   `project_workspaces`, `program_versions`, and `prototype_lab_recovery` as you create, join, and
+   save.
+6. Refresh the browser and confirm it recovers automatically. Restarting only the Node API while
+   keeping the same recovery secret also restores the acknowledged revision; runtime execution
+   returns stopped and must be deliberately run again.
 
 Never place the service-role key in a browser variable, commit it, paste it into a screenshot, or
 share it with students. This adapter does not make the current local API safe for public Internet
