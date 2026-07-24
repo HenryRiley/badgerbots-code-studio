@@ -9,4 +9,10 @@ save, immutable revision history, review/reopen, duplication, preview, and publi
 work locally. Publication intentionally fails while the source PDF and original world remain
 unverified. It is not an authenticated dashboard or cloud-backed curriculum store.
 
+Checkpoint 9 adds `/prototype`, which calls the separate loopback prototype control plane. It can
+create a one-day session, join a minimal camper, synchronize the editor's last runnable canonical
+program, deploy it through the signed Host protocol, execute attributed headless Sheep City events,
+prove a bad replacement retains the last good version, and stop the execution scope. The page
+explicitly does not claim a real Paper connection.
+
 Do not implement direct browser-to-teacher-host networking. The host maintains an authenticated outbound connection to the cloud control plane; Minecraft clients connect locally to the teacher laptop.

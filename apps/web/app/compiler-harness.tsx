@@ -363,6 +363,9 @@ export function CompilerHarness() {
           <Link className="header-link" href="/curriculum">
             Curriculum lab
           </Link>
+          <Link className="header-link" href="/prototype">
+            Connected prototype
+          </Link>
           <div className="proof-badge">
             <span aria-hidden="true" />
             Checkpoint 1 · browser only

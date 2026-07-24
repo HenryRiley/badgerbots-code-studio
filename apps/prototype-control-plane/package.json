@@ -1,0 +1,19 @@
+{
+  "name": "@badgerbots/prototype-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "turbo run build --filter=@badgerbots/prototype-control-plane^... && pnpm build && node --watch dist/server.js",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@badgerbots/control-plane": "workspace:*",
+    "@badgerbots/program-model": "workspace:*",
+    "@badgerbots/runtime-protocol": "workspace:*",
+    "@badgerbots/shared-types": "workspace:*"
+  }
+}

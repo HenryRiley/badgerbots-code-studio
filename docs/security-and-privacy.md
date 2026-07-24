@@ -13,3 +13,8 @@
 - Verify downloaded runtimes, server builds, plugins, client mods, and updates with checksums/signatures.
 - Keep backups recoverable but bound to the same deletion schedule.
 - Obtain legal/privacy review before production use with children; document COPPA and organizational obligations rather than assuming compliance.
+
+Checkpoint 9's connected prototype is a developer-only exception surface, not a deployment model.
+It binds only to `127.0.0.1`, accepts four explicit loopback Web origins, issues random memory-only
+bearer tokens, caps labs/body size/request rate, logs no tokens or program bodies, and loses all
+identity/program state at shutdown. It must never be exposed to a LAN or used with real camper data.
