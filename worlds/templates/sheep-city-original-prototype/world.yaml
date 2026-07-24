@@ -1,25 +1,16 @@
 schemaVersion: 1
 id: sheep-city-original-prototype
-status: generated-playable-prototype
+status: draft
 minecraftVersion: 1.21.11
-generation:
-  kind: BadgerBots-owned Paper plugin procedure
-  class: org.badgerbots.studio.paper.SheepCityWorld
 spawn:
   x: 0.5
   y: 65
   z: 0.5
+  yaw: 90
+  pitch: 0
 worldBorder:
   centerX: 0
   centerZ: 0
-  diameterBlocks: 192
-preGenerated:
-  radiusChunks: 1
-  chunkCount: 9
+  diameter: 192
+preGenerated: true
 resetPolicy: restore-from-immutable-template
-features:
-  - original archery lane and target
-  - gold-block movement pad
-  - fenced sheep pen
-  - spawn plaza
-  - original orientation building

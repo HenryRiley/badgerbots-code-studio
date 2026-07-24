@@ -26,12 +26,12 @@ describe("source-gated curriculum schema", () => {
     },
   );
 
-  it("validates pending world metadata without pretending the asset exists", async () => {
+  it("validates the generated world as a draft until immutable-template evidence exists", async () => {
     const world = WorldTemplateSchema.parse(
       await readYaml("worlds/templates/sheep-city-original-prototype/world.yaml"),
     );
-    expect(world.status).toBe("asset-required");
-    expect(world.spawn).toBe("pending");
+    expect(world.status).toBe("draft");
+    expect(world.spawn).toMatchObject({ x: 0.5, y: 65, z: 0.5 });
   });
 
   it("rejects publication while source verification is pending", () => {
