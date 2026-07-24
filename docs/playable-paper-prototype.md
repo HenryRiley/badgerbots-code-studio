@@ -21,7 +21,8 @@ BADGERBOTS_ACCEPT_MINECRAFT_EULA=true npx --yes pnpm@11.16.0 prototype:minecraft
 
 ```powershell
 $env:BADGERBOTS_ACCEPT_MINECRAFT_EULA = "true"
-npx --yes pnpm@11.16.0 prototype:minecraft
+corepack.cmd pnpm install --frozen-lockfile
+corepack.cmd pnpm prototype:minecraft
 ```
 
 For the teacher account to receive operator controls in this prototype run, set its exact Java
@@ -37,6 +38,8 @@ access.
 The first launch downloads checksummed Paper build 132 into ignored `work/paper-prototype/`,
 downloads the pinned Gradle distribution into ignored `work/gradle-home/`, compiles the plugin, and
 starts Paper. Nothing replaces the machine's global Java or Minecraft configuration.
+The Windows commands reuse Corepack's repository-pinned pnpm; pnpm does not need to be installed
+globally.
 
 ## Test the complete playable path
 

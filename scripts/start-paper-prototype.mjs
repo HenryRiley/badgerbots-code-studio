@@ -118,15 +118,27 @@ if (!pnpmEntrypoint) {
   await stopPaper();
   fail("Start this launcher through pnpm so the Web services can be started.");
 }
-const services = spawn(process.execPath, [pnpmEntrypoint, "prototype"], {
-  cwd: repository,
-  env: {
-    ...process.env,
-    BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
-    BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
+const services = spawn(
+  process.execPath,
+  [
+    pnpmEntrypoint,
+    "--parallel",
+    "--filter",
+    "@badgerbots/prototype-control-plane",
+    "--filter",
+    "@badgerbots/web",
+    "dev",
+  ],
+  {
+    cwd: repository,
+    env: {
+      ...process.env,
+      BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
+      BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
+    },
+    stdio: "inherit",
   },
-  stdio: "inherit",
-});
+);
 
 let stopping = false;
 const stop = async () => {
