@@ -1,6 +1,6 @@
 # Connected local prototype
 
-Checkpoint 9 is the first executable connection across previously separate product layers:
+The connected prototype is the executable connection across previously separate product layers:
 
 ```text
 Code Studio Web
@@ -12,9 +12,8 @@ Code Studio Web
   -> signed Host acknowledgement
 ```
 
-It intentionally stops at the Paper boundary. The runtime adapter records the exact Minecraft API
-intent and canonical AST node attribution, but it does not claim that a Paper server performed the
-action.
+Headless mode records exact Minecraft API intent and canonical AST node attribution. The playable
+launcher instead sends the same signed graph to the compiled real Paper plugin.
 
 ## Run
 
@@ -45,18 +44,20 @@ control plane rejects non-loopback Web origins.
 
 - The service binds to `127.0.0.1:4180` only.
 - Only Code Studio origins on loopback ports 3000 and 4173 are accepted.
-- Each lab gets a random 256-bit bearer token held only in React state.
+- Each lab gets a random 256-bit bearer token retained in browser storage for authenticated
+  refresh recovery. It is never placed in a URL.
 - At most eight labs exist for four hours; each IP is limited to 120 requests per minute.
 - JSON bodies are limited to 512 KB.
 - The server does not log tokens, join codes, names, programs, or event bodies.
-- All state is memory-only and disappears on shutdown.
+- Memory-mode state disappears on process shutdown. Optional Supabase mode stores compact
+  normalized rows plus an AES-256-GCM recovery envelope addressed by an HMAC token digest.
 
 Do not expose port 4180, use this with real child data, or treat it as production authentication.
 
 ## Remaining real-product path
 
-1. Replace memory storage with tested provider-backed PostgreSQL and real instructor/camper
-   authentication.
+1. Validate Supabase persistence live, then replace the prototype bearer recovery with real
+   instructor/camper authentication and authorized Broadcast channels.
 2. Move the Host verifier and durable replay/command queue into the native Windows Host.
 3. Connect the verified Host command to the compiled Paper plugin through a local authenticated
    transport.

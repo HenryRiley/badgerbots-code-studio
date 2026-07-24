@@ -119,21 +119,52 @@ function tokenOf(request: IncomingMessage): string | undefined {
   return isValidPrototypeToken(token) ? token : undefined;
 }
 
-function labFor(
+async function labFor(
   request: IncomingMessage,
   response: ServerResponse,
   state: PrototypeServerState,
   origin: string,
-): ConnectedPrototype | undefined {
+): Promise<{ token: string; record: LabRecord } | undefined> {
   const token = tokenOf(request);
-  const record = token ? state.labs.get(token) : undefined;
+  if (!token) {
+    json(response, 401, { error: "The local lab session is missing or expired." }, origin);
+    return undefined;
+  }
+  let record = state.labs.get(token);
+  if (!record) {
+    const recovered = await state.persistence.loadRecovery(token);
+    if (recovered !== undefined) {
+      record = {
+        prototype: ConnectedPrototype.recover(recovered, state.persistence),
+        expiresAt: Date.now() + LAB_LIFETIME_MS,
+      };
+      state.labs.set(token, record);
+    }
+  }
   if (!record || record.expiresAt <= Date.now()) {
-    if (token) state.labs.delete(token);
+    state.labs.delete(token);
     json(response, 401, { error: "The local lab session is missing or expired." }, origin);
     return undefined;
   }
   record.expiresAt = Date.now() + LAB_LIFETIME_MS;
-  return record.prototype;
+  return { token, record };
+}
+
+async function persistLab(
+  persistence: PrototypePersistence,
+  token: string,
+  record: LabRecord,
+): Promise<void> {
+  try {
+    await persistence.saveRecovery(
+      token,
+      record.prototype.recoveryState(),
+      new Date(record.expiresAt),
+    );
+    record.prototype.markRecoveryPersistence(true);
+  } catch {
+    record.prototype.markRecoveryPersistence(false);
+  }
 }
 
 function enforceRate(
@@ -198,17 +229,30 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
         const token = randomBytes(32).toString("base64url");
         const prototype = new ConnectedPrototype(state.persistence);
         const initialized = await prototype.initialize();
-        state.labs.set(token, {
+        const record = {
           prototype,
           expiresAt: Date.now() + LAB_LIFETIME_MS,
-        });
-        json(response, 201, { labToken: token, ...initialized }, origin);
+        };
+        state.labs.set(token, record);
+        await persistLab(state.persistence, token, record);
+        json(
+          response,
+          201,
+          { labToken: token, joinCode: initialized.joinCode, snapshot: prototype.snapshot() },
+          origin,
+        );
         return;
       }
-      const prototype = labFor(request, response, state, origin);
-      if (!prototype) return;
+      const lab = await labFor(request, response, state, origin);
+      if (!lab) return;
+      const { prototype } = lab.record;
       if (request.method === "GET" && url.pathname === "/api/lab/state") {
-        json(response, 200, { snapshot: prototype.snapshot() }, origin);
+        json(
+          response,
+          200,
+          { joinCode: prototype.joinCode(), snapshot: prototype.snapshot() },
+          origin,
+        );
         return;
       }
       if (request.method !== "POST") {
@@ -217,28 +261,34 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
       }
       const body = await readJson(request);
       if (url.pathname === "/api/lab/join") {
-        const snapshot = await prototype.join({
+        await prototype.join({
           joinCode: requiredString(body.joinCode, "joinCode"),
           firstName: requiredString(body.firstName, "firstName"),
           lastInitial: requiredString(body.lastInitial, "lastInitial"),
         });
-        json(response, 200, { snapshot }, origin);
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       if (url.pathname === "/api/lab/save") {
         const baseRevision = body.baseRevision;
         if (!Number.isSafeInteger(baseRevision) || (baseRevision as number) < 0)
           throw new Error("baseRevision must be a non-negative integer.");
-        const snapshot = await prototype.save(body.program, baseRevision as number);
-        json(response, 200, { snapshot }, origin);
+        await prototype.save(body.program, baseRevision as number);
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       if (url.pathname === "/api/lab/run") {
-        json(response, 200, { snapshot: await prototype.run() }, origin);
+        await prototype.run();
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       if (url.pathname === "/api/lab/reject-invalid") {
-        json(response, 200, { snapshot: await prototype.attemptRejectedDeployment() }, origin);
+        await prototype.attemptRejectedDeployment();
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       if (url.pathname === "/api/lab/event") {
@@ -247,15 +297,18 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
         const material = body.materialUnderPlayer;
         if (material !== undefined && material !== "GOLD_BLOCK" && material !== "OTHER")
           throw new Error("materialUnderPlayer must be GOLD_BLOCK or OTHER.");
-        const snapshot = prototype.trigger({
+        prototype.trigger({
           event,
           ...(material ? { materialUnderPlayer: material } : {}),
         });
-        json(response, 200, { snapshot }, origin);
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       if (url.pathname === "/api/lab/stop") {
-        json(response, 200, { snapshot: await prototype.stop() }, origin);
+        await prototype.stop();
+        await persistLab(state.persistence, lab.token, lab.record);
+        json(response, 200, { snapshot: prototype.snapshot() }, origin);
         return;
       }
       json(response, 404, { error: "Prototype route was not found." }, origin);

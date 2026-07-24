@@ -99,4 +99,17 @@ describe("portable control-plane migration", () => {
     expect(sql).toContain("id, workspace_id, revision");
     expect(sql).toContain("grant execute on function public.save_program_version_v2");
   });
+
+  it("keeps short-lived prototype recovery encrypted and service-role only", async () => {
+    const sql = await readFile(
+      resolve(root, "database/migrations/0004_prototype_lab_recovery.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create table public.prototype_lab_recovery");
+    expect(sql).toContain("encrypted_payload text not null");
+    expect(sql).toContain("enable row level security");
+    expect(sql).toContain("revoke all on public.prototype_lab_recovery from anon, authenticated");
+    expect(sql).toContain("recovery_expires_at > now() + interval '5 hours'");
+    expect(sql).toContain("grant execute on function public.load_prototype_lab_recovery");
+  });
 });

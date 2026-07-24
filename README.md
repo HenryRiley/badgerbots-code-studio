@@ -11,8 +11,9 @@ and acceptance criteria in `docs/`.
 The current prototype adds a checksummed Gradle/Paper build, compiled plugin, authenticated local
 Host-to-plugin file bridge, and an original procedurally generated Sheep City world. The Web
 prototype can deploy Run/Stop to Paper without a restart. A real Windows playtest has confirmed
-server startup and the gold-block jump; the new equipment and Sheep City respawn fixes require a
-retest. See the [playable prototype guide](docs/playable-paper-prototype.md),
+the complete Sheep City behavior, equipment, fall protection, and respawn path. Optional Supabase
+mode now adds encrypted four-hour browser/API recovery, pending live provider validation. See the
+[playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
 and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been
 transcribed, and no deployed cloud control plane, measured 25-student capacity, managed client

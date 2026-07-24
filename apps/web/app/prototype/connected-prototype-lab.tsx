@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { sheepCityCompletedExample, type Program } from "@badgerbots/program-model";
 import { loadLocalEditorState } from "../local-editor-storage";
 
 const API_BASE = process.env.NEXT_PUBLIC_BADGERBOTS_PROTOTYPE_API ?? "http://127.0.0.1:4180";
+const LAB_TOKEN_STORAGE_KEY = "badgerbots:prototype:lab-token:v1";
 
 interface PrototypeAction {
   id: string;
@@ -34,6 +35,7 @@ interface PrototypeSnapshot {
   runtimeMode: "headless" | "paper";
   persistenceMode: "memory" | "supabase";
   persistenceState: "synced" | "error";
+  changeSequence: number;
 }
 
 export function ConnectedPrototypeLab() {
@@ -44,6 +46,9 @@ export function ConnectedPrototypeLab() {
   const [lastInitial, setLastInitial] = useState("B");
   const [snapshot, setSnapshot] = useState<PrototypeSnapshot>();
   const [busy, setBusy] = useState(false);
+  const [connectionState, setConnectionState] = useState<
+    "not connected" | "recovering" | "live" | "offline"
+  >("not connected");
   const [message, setMessage] = useState(
     "Start both local services, then create a prototype camp session.",
   );
@@ -70,6 +75,46 @@ export function ConnectedPrototypeLab() {
     return result;
   };
 
+  useEffect(() => {
+    const token = localStorage.getItem(LAB_TOKEN_STORAGE_KEY);
+    if (!token) return;
+    setConnectionState("recovering");
+    setLabToken(token);
+    void request("/api/lab/state", undefined, token)
+      .then((result) => {
+        const code = result.joinCode;
+        if (typeof code === "string") {
+          setJoinCode(code);
+          setEnteredCode(code);
+        }
+        updateSnapshot(result);
+        setMessage("Recovered the acknowledged prototype session.");
+        setConnectionState("live");
+      })
+      .catch(() => {
+        localStorage.removeItem(LAB_TOKEN_STORAGE_KEY);
+        setLabToken(undefined);
+        setConnectionState("offline");
+        setError("The previous prototype session expired. Create a new local camp session.");
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!labToken) return;
+    const interval = window.setInterval(() => {
+      void request("/api/lab/state", undefined, labToken)
+        .then((result) => {
+          const next = result.snapshot as PrototypeSnapshot;
+          setSnapshot((current) =>
+            !current || next.changeSequence > current.changeSequence ? next : current,
+          );
+          setConnectionState("live");
+        })
+        .catch(() => setConnectionState("offline"));
+    }, 2_500);
+    return () => window.clearInterval(interval);
+  }, [labToken]);
+
   const perform = async (work: () => Promise<string>) => {
     setBusy(true);
     setError(undefined);
@@ -93,10 +138,12 @@ export function ConnectedPrototypeLab() {
       const result = await request("/api/lab/bootstrap", undefined, undefined);
       const token = result.labToken as string;
       const code = result.joinCode as string;
+      localStorage.setItem(LAB_TOKEN_STORAGE_KEY, token);
       setLabToken(token);
       setJoinCode(code);
       setEnteredCode(code);
       updateSnapshot(result);
+      setConnectionState("live");
       return "A random one-day local session and class code were created.";
     });
 
@@ -114,10 +161,22 @@ export function ConnectedPrototypeLab() {
   const saveProgram = (program: Program, label: string) =>
     perform(async () => {
       if (!snapshot) throw new Error("Create and join a local session first.");
-      const result = await request("/api/lab/save", {
-        baseRevision: snapshot.workspaceRevision,
-        program,
-      });
+      let result: Record<string, unknown>;
+      try {
+        result = await request("/api/lab/save", {
+          baseRevision: snapshot.workspaceRevision,
+          program,
+        });
+      } catch (caught) {
+        if (caught instanceof Error && caught.message.startsWith("Revision conflict:")) {
+          updateSnapshot(await request("/api/lab/state"));
+          throw new Error(
+            `${caught.message} The latest acknowledged revision is now shown; review and save again.`,
+            { cause: caught },
+          );
+        }
+        throw caught;
+      }
       const next = updateSnapshot(result);
       return `${label} saved as canonical revision ${next.workspaceRevision}.`;
     });
@@ -377,6 +436,10 @@ export function ConnectedPrototypeLab() {
               {snapshot?.persistenceMode ?? "unknown"} ·{" "}
               {snapshot?.persistenceState ?? "not started"}
             </dd>
+          </div>
+          <div>
+            <dt>Browser sync</dt>
+            <dd>{connectionState}</dd>
           </div>
         </dl>
       </section>

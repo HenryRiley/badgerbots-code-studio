@@ -69,6 +69,7 @@ export interface PrototypeSnapshot {
   runtimeMode: "headless" | "paper";
   persistenceMode: PrototypePersistenceMode;
   persistenceState: "synced" | "error";
+  changeSequence: number;
 }
 
 interface PrototypeIdentity {
@@ -84,6 +85,18 @@ interface StudentIdentity {
   workspaceId: WorkspaceId;
   accessToken: string;
   displayName: string;
+}
+
+interface PrototypeRecoveryState {
+  recoveryVersion: 1;
+  pepper: string;
+  bootstrapSecret: string;
+  store: MemoryControlPlaneStore["state"];
+  identity: PrototypeIdentity;
+  student?: StudentIdentity;
+  phase: PrototypeSnapshot["phase"];
+  deliveries: DeliveryRecord[];
+  changeSequence: number;
 }
 
 class PrototypeGameAdapter implements MinecraftRuntimeAdapter {
@@ -357,13 +370,16 @@ export class ConnectedPrototype {
   private activeProgramVersionId: string | undefined;
   private phase: PrototypeSnapshot["phase"] = "session_ready";
   private persistenceState: PrototypeSnapshot["persistenceState"] = "synced";
+  private changeSequence = 0;
+  private readonly pepper: string;
 
   constructor(
     private readonly persistence: PrototypePersistence = new MemoryPrototypePersistence(),
+    recovery?: PrototypeRecoveryState,
   ) {
-    const pepper = randomBytes(32).toString("base64url");
-    const bootstrapSecret = randomBytes(32).toString("base64url");
-    this.hasher = new HmacSecretHasher(pepper);
+    this.pepper = recovery?.pepper ?? randomBytes(32).toString("base64url");
+    const bootstrapSecret = recovery?.bootstrapSecret ?? randomBytes(32).toString("base64url");
+    this.hasher = new HmacSecretHasher(this.pepper);
     const authAdmin: InstructorAuthAdmin = {
       createInstructor: () => Promise.resolve({ authUserId: randomUUID() }),
     };
@@ -393,6 +409,19 @@ export class ConnectedPrototype {
       this.runtime,
       this.paper,
     );
+    if (recovery) {
+      this.restoreState(recovery.store);
+      this.identity = structuredClone(recovery.identity);
+      this.student = recovery.student ? structuredClone(recovery.student) : undefined;
+      this.deliveries.push(...structuredClone(recovery.deliveries).slice(-50));
+      this.phase =
+        recovery.phase === "program_running"
+          ? this.student
+            ? "program_saved"
+            : "session_ready"
+          : recovery.phase;
+      this.changeSequence = recovery.changeSequence + 1;
+    }
   }
 
   private readonly bootstrapSecret: string;
@@ -423,7 +452,34 @@ export class ConnectedPrototype {
       joinCode: created.joinCode,
     };
     await this.persistence.initialize(this.store.state);
+    this.markChanged();
     return { joinCode: created.joinCode, snapshot: this.snapshot() };
+  }
+
+  static recover(payload: unknown, persistence: PrototypePersistence): ConnectedPrototype {
+    return new ConnectedPrototype(persistence, parseRecoveryState(payload));
+  }
+
+  recoveryState(): PrototypeRecoveryState {
+    return {
+      recoveryVersion: 1,
+      pepper: this.pepper,
+      bootstrapSecret: this.bootstrapSecret,
+      store: structuredClone(this.store.state),
+      identity: structuredClone(this.requireIdentity()),
+      ...(this.student ? { student: structuredClone(this.student) } : {}),
+      phase: this.phase,
+      deliveries: structuredClone(this.deliveries),
+      changeSequence: this.changeSequence,
+    };
+  }
+
+  joinCode(): string {
+    return this.requireIdentity().joinCode;
+  }
+
+  markRecoveryPersistence(ok: boolean): void {
+    this.persistenceState = ok ? "synced" : "error";
   }
 
   async join(input: {
@@ -456,6 +512,7 @@ export class ConnectedPrototype {
       this.persistenceState = "error";
       throw error;
     }
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -490,6 +547,7 @@ export class ConnectedPrototype {
       throw error;
     }
     this.phase = "program_saved";
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -517,6 +575,7 @@ export class ConnectedPrototype {
     this.activeProgramVersionId = acknowledgement.command.activeProgramVersionId;
     this.phase = "program_running";
     await this.updatePersistedRuntimeVersion(this.activeProgramVersionId);
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -543,6 +602,7 @@ export class ConnectedPrototype {
       throw new Error("The intentionally invalid deployment was not rejected.");
     if (acknowledgement.command.activeProgramVersionId !== this.activeProgramVersionId)
       throw new Error("The Host did not retain the last known-good program.");
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -560,6 +620,7 @@ export class ConnectedPrototype {
       playerId: "prototype-player",
       sheepId: "prototype-sheep",
     });
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -574,6 +635,7 @@ export class ConnectedPrototype {
     this.activeProgramVersionId = undefined;
     this.phase = "stopped";
     await this.updatePersistedRuntimeVersion(undefined);
+    this.markChanged();
     return this.snapshot();
   }
 
@@ -594,6 +656,7 @@ export class ConnectedPrototype {
       runtimeMode: this.paper ? "paper" : "headless",
       persistenceMode: this.persistence.mode,
       persistenceState: this.persistenceState,
+      changeSequence: this.changeSequence,
     };
   }
 
@@ -689,6 +752,10 @@ export class ConnectedPrototype {
     this.store.state.realtimeHints.splice(0, Infinity, ...before.realtimeHints);
   }
 
+  private markChanged(): void {
+    this.changeSequence += 1;
+  }
+
   private requireIdentity(): PrototypeIdentity {
     if (!this.identity) throw new Error("Initialize the local lab first.");
     return this.identity;
@@ -698,4 +765,74 @@ export class ConnectedPrototype {
     if (!this.student) throw new Error("Join the local session first.");
     return this.student;
   }
+}
+
+function parseRecoveryState(payload: unknown): PrototypeRecoveryState {
+  if (
+    !isRecord(payload) ||
+    payload.recoveryVersion !== 1 ||
+    typeof payload.pepper !== "string" ||
+    payload.pepper.length < 32 ||
+    typeof payload.bootstrapSecret !== "string" ||
+    payload.bootstrapSecret.length < 32 ||
+    !isStoreState(payload.store) ||
+    !isIdentity(payload.identity) ||
+    (payload.student !== undefined && !isStudent(payload.student)) ||
+    !isPhase(payload.phase) ||
+    !Array.isArray(payload.deliveries) ||
+    !Number.isSafeInteger(payload.changeSequence) ||
+    (payload.changeSequence as number) < 0
+  )
+    throw new Error("The persisted prototype recovery state is invalid.");
+  return structuredClone(payload) as unknown as PrototypeRecoveryState;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStoreState(value: unknown): value is MemoryControlPlaneStore["state"] {
+  if (!isRecord(value)) return false;
+  return [
+    "organizations",
+    "locations",
+    "instructors",
+    "memberships",
+    "sessions",
+    "campers",
+    "workspaces",
+    "versions",
+    "progressRecords",
+    "helpRequests",
+    "audits",
+    "realtimeHints",
+  ].every((key) => Array.isArray(value[key]));
+}
+
+function isIdentity(value: unknown): value is PrototypeIdentity {
+  return (
+    isRecord(value) &&
+    ["organizationId", "locationId", "instructorId", "sessionId", "joinCode"].every(
+      (key) => typeof value[key] === "string" && value[key].length > 0,
+    )
+  );
+}
+
+function isStudent(value: unknown): value is StudentIdentity {
+  return (
+    isRecord(value) &&
+    ["camperId", "workspaceId", "accessToken", "displayName"].every(
+      (key) => typeof value[key] === "string" && value[key].length > 0,
+    )
+  );
+}
+
+function isPhase(value: unknown): value is PrototypeSnapshot["phase"] {
+  return [
+    "session_ready",
+    "student_joined",
+    "program_saved",
+    "program_running",
+    "stopped",
+  ].includes(String(value));
 }

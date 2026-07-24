@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "check:database": "node bin/check-supabase.mjs",
     "dev": "turbo run build --filter=@badgerbots/prototype-control-plane^... && pnpm build && node --watch dist/server.js",
     "start": "node dist/server.js",
     "test": "vitest run",
