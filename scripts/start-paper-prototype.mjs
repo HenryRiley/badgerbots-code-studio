@@ -20,6 +20,7 @@ const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const runtime = path.join(repository, "work", "paper-prototype");
 const bridge = path.join(runtime, "bridge");
 const plugins = path.join(runtime, "plugins");
+const toolBin = path.join(runtime, "tool-bin");
 const paper = path.join(runtime, "paper-1.21.11-132.jar");
 const plugin = path.join(
   repository,
@@ -42,6 +43,11 @@ if (process.env.BADGERBOTS_ACCEPT_MINECRAFT_EULA !== "true") {
 await mkdir(plugins, { recursive: true });
 await mkdir(path.join(bridge, "inbox"), { recursive: true });
 await mkdir(path.join(bridge, "outbox"), { recursive: true });
+const pnpmEntrypoint = process.env.npm_execpath;
+if (!pnpmEntrypoint) {
+  fail("Start this launcher through pnpm so the Web services can be started.");
+}
+await preparePackageManager(pnpmEntrypoint);
 await ensurePaper();
 await buildPlugin();
 await copyFile(plugin, path.join(plugins, "badgerbots-paper-plugin.jar"));
@@ -50,9 +56,21 @@ await clearBridgeMessages();
 
 const secret = randomBytes(32).toString("base64url");
 const java = process.env.BADGERBOTS_JAVA ?? "java";
+const teacherUsername = process.env.BADGERBOTS_TEACHER_MINECRAFT_USERNAME;
+if (teacherUsername && !/^[A-Za-z0-9_]{3,16}$/.test(teacherUsername)) {
+  fail("BADGERBOTS_TEACHER_MINECRAFT_USERNAME must be a valid 3-16 character Java username.");
+}
 const paperProcess = spawn(
   java,
-  ["-Xms1G", "-Xmx4G", `-Dbadgerbots.bridge.dir=${bridge}`, "-jar", paper, "--nogui"],
+  [
+    "-Xms1G",
+    "-Xmx4G",
+    `-Dbadgerbots.bridge.dir=${bridge}`,
+    ...(teacherUsername ? [`-Dbadgerbots.teacherUsername=${teacherUsername}`] : []),
+    "-jar",
+    paper,
+    "--nogui",
+  ],
   {
     cwd: runtime,
     env: { ...process.env, BADGERBOTS_PAPER_BRIDGE_SECRET: secret },
@@ -101,20 +119,30 @@ try {
   fail(error instanceof Error ? error.message : "Paper failed to start.");
 }
 
-const pnpmEntrypoint = process.env.npm_execpath;
-if (!pnpmEntrypoint) {
-  await stopPaper();
-  fail("Start this launcher through pnpm so the Web services can be started.");
-}
-const services = spawn(process.execPath, [pnpmEntrypoint, "prototype"], {
-  cwd: repository,
-  env: {
-    ...process.env,
-    BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
-    BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
+const services = spawn(
+  process.execPath,
+  [
+    pnpmEntrypoint,
+    "--parallel",
+    "--filter",
+    "@badgerbots/prototype-control-plane",
+    "--filter",
+    "@badgerbots/web",
+    "dev",
+  ],
+  {
+    cwd: repository,
+    env: withPathPrefix(
+      {
+        ...process.env,
+        BADGERBOTS_PAPER_BRIDGE_DIR: bridge,
+        BADGERBOTS_PAPER_BRIDGE_SECRET: secret,
+      },
+      toolBin,
+    ),
+    stdio: "inherit",
   },
-  stdio: "inherit",
-});
+);
 
 let stopping = false;
 const stop = async () => {
@@ -155,6 +183,35 @@ async function ensurePaper() {
   await rename(temporary, paper);
 }
 
+async function preparePackageManager(entrypoint) {
+  await mkdir(toolBin, { recursive: true });
+  if (process.platform === "win32") {
+    const escapeBatch = (value) => value.replaceAll("%", "%%").replaceAll('"', '""');
+    await writeFile(
+      path.join(toolBin, "pnpm.cmd"),
+      `@echo off\r\n"${escapeBatch(process.execPath)}" "${escapeBatch(entrypoint)}" %*\r\n`,
+      { encoding: "utf8", mode: 0o700 },
+    );
+    return;
+  }
+  const quoteShell = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  const shim = path.join(toolBin, "pnpm");
+  await writeFile(
+    shim,
+    `#!/bin/sh\nexec ${quoteShell(process.execPath)} ${quoteShell(entrypoint)} "$@"\n`,
+    { encoding: "utf8", mode: 0o700 },
+  );
+  await chmod(shim, 0o700);
+}
+
+function withPathPrefix(environment, prefix) {
+  const pathKey = Object.keys(environment).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  return {
+    ...environment,
+    [pathKey]: `${prefix}${path.delimiter}${environment[pathKey] ?? ""}`,
+  };
+}
+
 async function buildPlugin() {
   const windows = process.platform === "win32";
   const wrapper = path.join(
@@ -171,6 +228,9 @@ async function buildPlugin() {
 
 async function writeManagedConfiguration() {
   await writeFile(path.join(runtime, "eula.txt"), "eula=true\n", { encoding: "utf8", mode: 0o600 });
+  // This is a dedicated generated server. Clear any operator left by an interrupted prior
+  // prototype run before the explicitly configured teacher is granted access on join.
+  await writeFile(path.join(runtime, "ops.json"), "[]\n", { encoding: "utf8", mode: 0o600 });
   await writeFile(
     path.join(runtime, "server.properties"),
     [

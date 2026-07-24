@@ -1,19 +1,56 @@
 import { sheepCityCompletedExample } from "@badgerbots/program-model";
+import type { ProgramVersion, StoreState, Workspace } from "@badgerbots/control-plane";
 import { describe, expect, it } from "vitest";
+import type { PrototypePersistence } from "../src/persistence.js";
 import { ConnectedPrototype } from "../src/prototype.js";
 import { isAllowedPrototypeOrigin, isValidPrototypeToken } from "../src/server.js";
+
+class RecordingPersistence implements PrototypePersistence {
+  readonly mode = "supabase" as const;
+  initialized = 0;
+  joined = 0;
+  saved = 0;
+  rejectSave = false;
+
+  initialize(state: StoreState): Promise<void> {
+    void state;
+    this.initialized += 1;
+    return Promise.resolve();
+  }
+
+  join(state: StoreState): Promise<void> {
+    void state;
+    this.joined += 1;
+    return Promise.resolve();
+  }
+
+  save(workspace: Workspace, version: ProgramVersion): Promise<void> {
+    void workspace;
+    void version;
+    this.saved += 1;
+    return this.rejectSave
+      ? Promise.reject(new Error("durable save unavailable"))
+      : Promise.resolve();
+  }
+
+  setActiveRuntimeVersion(workspaceId: string, versionId: string | undefined): Promise<void> {
+    void workspaceId;
+    void versionId;
+    return Promise.resolve();
+  }
+}
 
 describe("connected local prototype", () => {
   it("joins, saves, signs, deploys, executes, rejects a bad replacement, and stops", async () => {
     const prototype = new ConnectedPrototype();
     const initialized = await prototype.initialize();
-    let snapshot = prototype.join({
+    let snapshot = await prototype.join({
       joinCode: initialized.joinCode,
       firstName: "Ada",
       lastInitial: "L",
     });
     expect(snapshot.phase).toBe("student_joined");
-    snapshot = prototype.save(sheepCityCompletedExample, snapshot.workspaceRevision);
+    snapshot = await prototype.save(sheepCityCompletedExample, snapshot.workspaceRevision);
     expect(snapshot.workspaceRevision).toBe(1);
 
     snapshot = await prototype.run();
@@ -56,16 +93,42 @@ describe("connected local prototype", () => {
   it("preserves the current revision when a stale save conflicts", async () => {
     const prototype = new ConnectedPrototype();
     const initialized = await prototype.initialize();
-    prototype.join({
+    await prototype.join({
       joinCode: initialized.joinCode,
       firstName: "Grace",
       lastInitial: "H",
     });
-    prototype.save(sheepCityCompletedExample, 0);
-    expect(() => prototype.save(sheepCityCompletedExample, 0)).toThrow(
+    await prototype.save(sheepCityCompletedExample, 0);
+    await expect(prototype.save(sheepCityCompletedExample, 0)).rejects.toThrow(
       "Revision conflict: expected 0, current 1.",
     );
     expect(prototype.snapshot().workspaceRevision).toBe(1);
+  });
+
+  it("rolls back an acknowledged local mutation when durable persistence fails", async () => {
+    const persistence = new RecordingPersistence();
+    const prototype = new ConnectedPrototype(persistence);
+    const initialized = await prototype.initialize();
+    await prototype.join({
+      joinCode: initialized.joinCode,
+      firstName: "Katherine",
+      lastInitial: "J",
+    });
+    persistence.rejectSave = true;
+    await expect(prototype.save(sheepCityCompletedExample, 0)).rejects.toThrow(
+      "durable save unavailable",
+    );
+    expect(prototype.snapshot()).toMatchObject({
+      workspaceRevision: 0,
+      persistenceMode: "supabase",
+      persistenceState: "error",
+    });
+    persistence.rejectSave = false;
+    await expect(prototype.save(sheepCityCompletedExample, 0)).resolves.toMatchObject({
+      workspaceRevision: 1,
+      persistenceState: "synced",
+    });
+    expect(persistence).toMatchObject({ initialized: 1, joined: 1, saved: 2 });
   });
 
   it("restricts the HTTP boundary to approved loopback origins and strong tokens", () => {

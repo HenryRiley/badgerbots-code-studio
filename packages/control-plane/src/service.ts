@@ -55,7 +55,8 @@ export class SystemClock implements Clock {
 
 export class RandomIdGenerator implements IdGenerator {
   next(kind: string): string {
-    return `${kind}_${randomUUID()}`;
+    void kind;
+    return randomUUID();
   }
 }
 

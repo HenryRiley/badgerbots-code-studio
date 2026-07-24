@@ -14,6 +14,7 @@
     "@badgerbots/control-plane": "workspace:*",
     "@badgerbots/program-model": "workspace:*",
     "@badgerbots/runtime-protocol": "workspace:*",
-    "@badgerbots/shared-types": "workspace:*"
+    "@badgerbots/shared-types": "workspace:*",
+    "@supabase/supabase-js": "2.110.8"
   }
 }

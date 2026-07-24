@@ -34,6 +34,11 @@ import type {
   SessionId,
   WorkspaceId,
 } from "@badgerbots/shared-types";
+import {
+  MemoryPrototypePersistence,
+  type PrototypePersistence,
+  type PrototypePersistenceMode,
+} from "./persistence.js";
 
 export type PrototypeEvent = RuntimeEventContext["event"];
 
@@ -62,6 +67,8 @@ export interface PrototypeSnapshot {
   actions: PrototypeAction[];
   deliveries: DeliveryRecord[];
   runtimeMode: "headless" | "paper";
+  persistenceMode: PrototypePersistenceMode;
+  persistenceState: "synced" | "error";
 }
 
 interface PrototypeIdentity {
@@ -349,13 +356,16 @@ export class ConnectedPrototype {
   private student: StudentIdentity | undefined;
   private activeProgramVersionId: string | undefined;
   private phase: PrototypeSnapshot["phase"] = "session_ready";
+  private persistenceState: PrototypeSnapshot["persistenceState"] = "synced";
 
-  constructor() {
+  constructor(
+    private readonly persistence: PrototypePersistence = new MemoryPrototypePersistence(),
+  ) {
     const pepper = randomBytes(32).toString("base64url");
     const bootstrapSecret = randomBytes(32).toString("base64url");
     this.hasher = new HmacSecretHasher(pepper);
     const authAdmin: InstructorAuthAdmin = {
-      createInstructor: () => Promise.resolve({ authUserId: `prototype-auth-${randomUUID()}` }),
+      createInstructor: () => Promise.resolve({ authUserId: randomUUID() }),
     };
     this.service = new ControlPlaneService(
       this.store,
@@ -412,12 +422,18 @@ export class ConnectedPrototype {
       sessionId: created.session.id,
       joinCode: created.joinCode,
     };
+    await this.persistence.initialize(this.store.state);
     return { joinCode: created.joinCode, snapshot: this.snapshot() };
   }
 
-  join(input: { joinCode: string; firstName: string; lastInitial: string }): PrototypeSnapshot {
+  async join(input: {
+    joinCode: string;
+    firstName: string;
+    lastInitial: string;
+  }): Promise<PrototypeSnapshot> {
     this.requireIdentity();
     if (this.student) throw new Error("This local lab already has a student.");
+    const before = structuredClone(this.store.state);
     const joined = this.service.joinCamper({
       ...input,
       attemptKey: `loopback-${randomUUID()}`,
@@ -430,11 +446,23 @@ export class ConnectedPrototype {
       displayName: `${input.firstName.trim()} ${input.lastInitial.trim().toUpperCase()}.`,
     };
     this.phase = "student_joined";
+    try {
+      await this.persistence.join(this.store.state);
+      this.persistenceState = "synced";
+    } catch (error) {
+      this.restoreState(before);
+      this.student = undefined;
+      this.phase = "session_ready";
+      this.persistenceState = "error";
+      throw error;
+    }
     return this.snapshot();
   }
 
-  save(program: unknown, baseRevision: number): PrototypeSnapshot {
+  async save(program: unknown, baseRevision: number): Promise<PrototypeSnapshot> {
     const student = this.requireStudent();
+    const before = structuredClone(this.store.state);
+    const previousPhase = this.phase;
     const result = this.service.saveProgram({
       actor: {
         kind: "camper",
@@ -451,6 +479,16 @@ export class ConnectedPrototype {
       throw new Error(
         `Revision conflict: expected ${result.expectedRevision}, current ${result.actualRevision}.`,
       );
+    const workspace = this.workspace();
+    try {
+      await this.persistence.save(workspace, result.version);
+      this.persistenceState = "synced";
+    } catch (error) {
+      this.restoreState(before);
+      this.phase = previousPhase;
+      this.persistenceState = "error";
+      throw error;
+    }
     this.phase = "program_saved";
     return this.snapshot();
   }
@@ -478,6 +516,7 @@ export class ConnectedPrototype {
       );
     this.activeProgramVersionId = acknowledgement.command.activeProgramVersionId;
     this.phase = "program_running";
+    await this.updatePersistedRuntimeVersion(this.activeProgramVersionId);
     return this.snapshot();
   }
 
@@ -534,6 +573,7 @@ export class ConnectedPrototype {
       throw new Error("The Host rejected the stop request.");
     this.activeProgramVersionId = undefined;
     this.phase = "stopped";
+    await this.updatePersistedRuntimeVersion(undefined);
     return this.snapshot();
   }
 
@@ -552,6 +592,8 @@ export class ConnectedPrototype {
       actions: structuredClone(this.adapter.actions),
       deliveries: structuredClone(this.deliveries),
       runtimeMode: this.paper ? "paper" : "headless",
+      persistenceMode: this.persistence.mode,
+      persistenceState: this.persistenceState,
     };
   }
 
@@ -621,6 +663,30 @@ export class ConnectedPrototype {
     );
     if (!workspace) throw new Error("Prototype workspace was not found.");
     return workspace;
+  }
+
+  private async updatePersistedRuntimeVersion(versionId: string | undefined): Promise<void> {
+    try {
+      await this.persistence.setActiveRuntimeVersion(this.requireStudent().workspaceId, versionId);
+      this.persistenceState = "synced";
+    } catch {
+      this.persistenceState = "error";
+    }
+  }
+
+  private restoreState(before: MemoryControlPlaneStore["state"]): void {
+    this.store.state.organizations.splice(0, Infinity, ...before.organizations);
+    this.store.state.locations.splice(0, Infinity, ...before.locations);
+    this.store.state.instructors.splice(0, Infinity, ...before.instructors);
+    this.store.state.memberships.splice(0, Infinity, ...before.memberships);
+    this.store.state.sessions.splice(0, Infinity, ...before.sessions);
+    this.store.state.campers.splice(0, Infinity, ...before.campers);
+    this.store.state.workspaces.splice(0, Infinity, ...before.workspaces);
+    this.store.state.versions.splice(0, Infinity, ...before.versions);
+    this.store.state.progressRecords.splice(0, Infinity, ...before.progressRecords);
+    this.store.state.helpRequests.splice(0, Infinity, ...before.helpRequests);
+    this.store.state.audits.splice(0, Infinity, ...before.audits);
+    this.store.state.realtimeHints.splice(0, Infinity, ...before.realtimeHints);
   }
 
   private requireIdentity(): PrototypeIdentity {
