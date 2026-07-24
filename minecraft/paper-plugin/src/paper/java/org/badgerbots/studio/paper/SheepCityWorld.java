@@ -11,7 +11,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Sheep;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /** Creates an original compact prototype layout entirely from vanilla blocks. */
@@ -20,11 +23,13 @@ final class SheepCityWorld implements Listener {
 
   private final JavaPlugin plugin;
   private final PaperRuntimeGateway gateway;
+  private final String teacherUsername;
   private World world;
 
   SheepCityWorld(JavaPlugin plugin, PaperRuntimeGateway gateway) {
     this.plugin = plugin;
     this.gateway = gateway;
+    this.teacherUsername = System.getProperty("badgerbots.teacherUsername", "");
   }
 
   void create() {
@@ -72,12 +77,53 @@ final class SheepCityWorld implements Listener {
 
   @EventHandler
   public void onJoin(PlayerJoinEvent event) {
-    event.getPlayer().teleportAsync(new Location(world(), 0.5, 65, 0.5, 90, 0));
-    event
-        .getPlayer()
+    Player player = event.getPlayer();
+    if (!teacherUsername.isBlank() && player.getName().equalsIgnoreCase(teacherUsername)) {
+      player.setOp(true);
+      player.sendMessage(
+          net.kyori.adventure.text.Component.text(
+              "Teacher operator controls are enabled for this prototype run."));
+    }
+    giveTestKit(player);
+    player.teleportAsync(spawn());
+    player
         .sendMessage(
             net.kyori.adventure.text.Component.text(
-                "Welcome to the BadgerBots Sheep City prototype."));
+                "Welcome to Sheep City. Your test bow, arrows, sword, and food are ready."));
+  }
+
+  @EventHandler
+  public void onRespawn(PlayerRespawnEvent event) {
+    event.setRespawnLocation(spawn());
+    giveTestKit(event.getPlayer());
+  }
+
+  @EventHandler
+  public void onDamage(EntityDamageEvent event) {
+    if (event.getEntity() instanceof Player player
+        && player.getWorld().equals(world())
+        && event.getCause() == EntityDamageEvent.DamageCause.FALL) {
+      event.setCancelled(true);
+    }
+  }
+
+  private Location spawn() {
+    return new Location(world(), 0.5, 65, 0.5, 90, 0);
+  }
+
+  private void giveTestKit(Player player) {
+    if (!player.getInventory().contains(Material.BOW)) {
+      player.getInventory().addItem(new ItemStack(Material.BOW));
+    }
+    if (!player.getInventory().contains(Material.ARROW)) {
+      player.getInventory().addItem(new ItemStack(Material.ARROW, 64));
+    }
+    if (!player.getInventory().contains(Material.IRON_SWORD)) {
+      player.getInventory().addItem(new ItemStack(Material.IRON_SWORD));
+    }
+    if (!player.getInventory().contains(Material.COOKED_BEEF)) {
+      player.getInventory().addItem(new ItemStack(Material.COOKED_BEEF, 16));
+    }
   }
 
   private void buildLayout() {

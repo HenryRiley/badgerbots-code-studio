@@ -3,15 +3,16 @@
 BadgerBots Code Studio is a clean-room, Minecraft-only coding platform for BadgerBots summer camps. It combines a block-based learning website, a teacher-laptop Minecraft host, a student connection helper, and a restricted Java-style educational runtime.
 
 This repository contains the Sheep City compiler/browser proof, local control-plane and runtime
-slices, early Host and Connect applications, scale/curriculum foundations, the connected loopback
-prototype, and a Checkpoint 10 playable Paper developer prototype—not a completed product. Begin
+slices, early Host and Connect applications, scale/curriculum foundations, and a playable Paper
+developer prototype with optional Supabase persistence—not a completed product. Begin
 with [`prompts/INITIAL_CODEX_PROMPT.md`](prompts/INITIAL_CODEX_PROMPT.md), then use the architecture
 and acceptance criteria in `docs/`.
 
-Checkpoint 10 adds a checksummed Gradle/Paper build, compiled plugin, authenticated local
+The current prototype adds a checksummed Gradle/Paper build, compiled plugin, authenticated local
 Host-to-plugin file bridge, and an original procedurally generated Sheep City world. The Web
-prototype can deploy Run/Stop to Paper without a restart; physical Windows/Minecraft evidence is
-still required before acceptance. See the [playable prototype guide](docs/playable-paper-prototype.md),
+prototype can deploy Run/Stop to Paper without a restart. A real Windows playtest has confirmed
+server startup and the gold-block jump; the new equipment and Sheep City respawn fixes require a
+retest. See the [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
 and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been
 transcribed, and no deployed cloud control plane, measured 25-student capacity, managed client

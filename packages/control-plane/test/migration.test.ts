@@ -87,4 +87,16 @@ describe("portable control-plane migration", () => {
     expect(sql).toContain("grant execute on function public.bootstrap_owner");
     expect(sql).not.toContain("grant select on public.campers to anon");
   });
+
+  it("atomically saves caller-generated version UUIDs for database-backed prototypes", async () => {
+    const sql = await readFile(
+      resolve(root, "database/migrations/0003_atomic_program_version_ids.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create function public.save_program_version_v2");
+    expect(sql).toContain("created_version_id uuid");
+    expect(sql).toContain("for update;");
+    expect(sql).toContain("id, workspace_id, revision");
+    expect(sql).toContain("grant execute on function public.save_program_version_v2");
+  });
 });

@@ -32,6 +32,8 @@ interface PrototypeSnapshot {
   actions: PrototypeAction[];
   deliveries: DeliveryRecord[];
   runtimeMode: "headless" | "paper";
+  persistenceMode: "memory" | "supabase";
+  persistenceState: "synced" | "error";
 }
 
 export function ConnectedPrototypeLab() {
@@ -43,7 +45,7 @@ export function ConnectedPrototypeLab() {
   const [snapshot, setSnapshot] = useState<PrototypeSnapshot>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(
-    "Start both local services, then create a memory-only camp session.",
+    "Start both local services, then create a prototype camp session.",
   );
   const [error, setError] = useState<string>();
 
@@ -176,7 +178,7 @@ export function ConnectedPrototypeLab() {
     <main className="prototype-shell">
       <header className="prototype-header">
         <div>
-          <p className="eyebrow">Checkpoint 10 · playable Paper prototype</p>
+          <p className="eyebrow">Working prototype · Paper + optional Supabase</p>
           <h1>Web → control plane → Host → runtime</h1>
           <p>
             A signed integration path that can deploy the editor program into a local Paper server.
@@ -191,8 +193,8 @@ export function ConnectedPrototypeLab() {
         {snapshot?.runtimeMode === "paper" ? (
           <>
             <strong>Paper prototype mode:</strong> join the local server before Run. Fire a bow at
-            the target, walk onto gold, and defeat the red sheep in Minecraft. State is still local
-            and memory-only.
+            the target, walk onto gold, and defeat the red sheep in Minecraft. The server supplies
+            the required equipment without operator access.
           </>
         ) : (
           <>
@@ -367,6 +369,13 @@ export function ConnectedPrototypeLab() {
             <dd>
               {snapshot?.runtimeMode ?? "unknown"} ·{" "}
               {snapshot?.activeProgramVersionId ? "active" : "stopped"}
+            </dd>
+          </div>
+          <div>
+            <dt>Database</dt>
+            <dd>
+              {snapshot?.persistenceMode ?? "unknown"} ·{" "}
+              {snapshot?.persistenceState ?? "not started"}
             </dd>
           </div>
         </dl>

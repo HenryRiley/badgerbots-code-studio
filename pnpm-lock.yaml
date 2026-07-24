@@ -93,6 +93,9 @@ importers:
       "@badgerbots/shared-types":
         specifier: workspace:*
         version: link:../../packages/shared-types
+      "@supabase/supabase-js":
+        specifier: 2.110.8
+        version: 2.110.8
 
   apps/student-connect:
     dependencies:

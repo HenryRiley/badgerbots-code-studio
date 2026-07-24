@@ -6,6 +6,7 @@ import {
   ControlPlaneService,
   HmacSecretHasher,
   MemoryControlPlaneStore,
+  RandomIdGenerator,
   type Clock,
   type IdGenerator,
   type InstructorAuthAdmin,
@@ -102,6 +103,12 @@ async function sessionFixture() {
 }
 
 describe("Checkpoint 2 control plane", () => {
+  it("generates database-compatible opaque UUID identifiers", () => {
+    expect(new RandomIdGenerator().next("workspace")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
   it("uses one-time admin bootstrap without persisting a password", async () => {
     const { service, store, auth, bootstrapSecret } = await fixture();
     expect(auth.calls).toHaveLength(1);

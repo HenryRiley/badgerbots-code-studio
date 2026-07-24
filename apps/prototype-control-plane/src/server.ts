@@ -2,6 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { ConnectedPrototype, type PrototypeEvent } from "./prototype.js";
+import {
+  createPrototypePersistenceFromEnvironment,
+  type PrototypePersistence,
+} from "./persistence.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4180;
@@ -28,10 +32,15 @@ interface RateRecord {
 export interface PrototypeServerState {
   labs: Map<string, LabRecord>;
   rates: Map<string, RateRecord>;
+  persistence: PrototypePersistence;
 }
 
 export function createPrototypeServerState(): PrototypeServerState {
-  return { labs: new Map(), rates: new Map() };
+  return {
+    labs: new Map(),
+    rates: new Map(),
+    persistence: createPrototypePersistenceFromEnvironment(),
+  };
 }
 
 function json(response: ServerResponse, status: number, body: unknown, origin?: string): void {
@@ -162,6 +171,7 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
           ? "loopback-paper-prototype"
           : "loopback-memory-only",
         paperConnected: Boolean(process.env.BADGERBOTS_PAPER_BRIDGE_DIR),
+        persistenceMode: state.persistence.mode,
       });
       return;
     }
@@ -186,7 +196,7 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
           return;
         }
         const token = randomBytes(32).toString("base64url");
-        const prototype = new ConnectedPrototype();
+        const prototype = new ConnectedPrototype(state.persistence);
         const initialized = await prototype.initialize();
         state.labs.set(token, {
           prototype,
@@ -207,7 +217,7 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
       }
       const body = await readJson(request);
       if (url.pathname === "/api/lab/join") {
-        const snapshot = prototype.join({
+        const snapshot = await prototype.join({
           joinCode: requiredString(body.joinCode, "joinCode"),
           firstName: requiredString(body.firstName, "firstName"),
           lastInitial: requiredString(body.lastInitial, "lastInitial"),
@@ -219,7 +229,7 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
         const baseRevision = body.baseRevision;
         if (!Number.isSafeInteger(baseRevision) || (baseRevision as number) < 0)
           throw new Error("baseRevision must be a non-negative integer.");
-        const snapshot = prototype.save(body.program, baseRevision as number);
+        const snapshot = await prototype.save(body.program, baseRevision as number);
         json(response, 200, { snapshot }, origin);
         return;
       }
@@ -271,7 +281,8 @@ function isPrototypeEvent(value: string): value is PrototypeEvent {
 }
 
 export function startPrototypeServer(): ReturnType<typeof createServer> {
-  const handler = createPrototypeRequestHandler();
+  const state = createPrototypeServerState();
+  const handler = createPrototypeRequestHandler(state);
   const server = createServer((request, response) => {
     void handler(request, response).catch(() => {
       if (!response.headersSent)
@@ -280,8 +291,9 @@ export function startPrototypeServer(): ReturnType<typeof createServer> {
     });
   });
   server.listen(PORT, HOST, () => {
+    const runtimeMode = process.env.BADGERBOTS_PAPER_BRIDGE_DIR ? "Paper" : "headless";
     process.stdout.write(
-      `BadgerBots connected prototype listening on http://${HOST}:${PORT} (loopback only; no Paper connection).\n`,
+      `BadgerBots connected prototype listening on http://${HOST}:${PORT} (loopback only; ${runtimeMode} runtime; ${state.persistence.mode} persistence).\n`,
     );
   });
   return server;

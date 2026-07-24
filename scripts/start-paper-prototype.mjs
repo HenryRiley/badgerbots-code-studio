@@ -50,9 +50,21 @@ await clearBridgeMessages();
 
 const secret = randomBytes(32).toString("base64url");
 const java = process.env.BADGERBOTS_JAVA ?? "java";
+const teacherUsername = process.env.BADGERBOTS_TEACHER_MINECRAFT_USERNAME;
+if (teacherUsername && !/^[A-Za-z0-9_]{3,16}$/.test(teacherUsername)) {
+  fail("BADGERBOTS_TEACHER_MINECRAFT_USERNAME must be a valid 3-16 character Java username.");
+}
 const paperProcess = spawn(
   java,
-  ["-Xms1G", "-Xmx4G", `-Dbadgerbots.bridge.dir=${bridge}`, "-jar", paper, "--nogui"],
+  [
+    "-Xms1G",
+    "-Xmx4G",
+    `-Dbadgerbots.bridge.dir=${bridge}`,
+    ...(teacherUsername ? [`-Dbadgerbots.teacherUsername=${teacherUsername}`] : []),
+    "-jar",
+    paper,
+    "--nogui",
+  ],
   {
     cwd: runtime,
     env: { ...process.env, BADGERBOTS_PAPER_BRIDGE_SECRET: secret },
@@ -171,6 +183,9 @@ async function buildPlugin() {
 
 async function writeManagedConfiguration() {
   await writeFile(path.join(runtime, "eula.txt"), "eula=true\n", { encoding: "utf8", mode: 0o600 });
+  // This is a dedicated generated server. Clear any operator left by an interrupted prior
+  // prototype run before the explicitly configured teacher is granted access on join.
+  await writeFile(path.join(runtime, "ops.json"), "[]\n", { encoding: "utf8", mode: 0o600 });
   await writeFile(
     path.join(runtime, "server.properties"),
     [
