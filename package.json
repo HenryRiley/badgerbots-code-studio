@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "lint": "turbo run build --filter=@badgerbots/program-model --filter=@badgerbots/shared-types && eslint .",
     "metadata:check": "node tools/repository/src/validate-metadata.mjs",
+    "prototype": "pnpm --parallel --filter @badgerbots/prototype-control-plane --filter @badgerbots/web dev",
     "repository:test": "node --test tools/repository/test/*.test.mjs",
     "secret:scan": "node tools/repository/src/secret-scan.mjs",
     "test": "turbo run test && pnpm repository:test",

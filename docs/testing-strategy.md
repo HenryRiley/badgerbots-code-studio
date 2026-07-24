@@ -44,6 +44,14 @@ responsive layout without horizontal overflow, and console stability. Provider p
 authenticated author roles, source-file ingestion, and publication from a deployed database
 remain required-environment tests.
 
+Checkpoint 9 adds an integration test that drives generated session/join identity, canonical
+optimistic save, signed and scoped cloud-to-Host delivery, verified Host acknowledgement, atomic
+deployment, all Sheep City event actions, invalid replacement rejection with last-good retention,
+and Stop cancellation. HTTP boundary tests cover explicit loopback-origin and strong-token policy.
+Browser verification exercises the same workflow through `/prototype`, checks action/source-node
+evidence, confirms Stop disables events, and verifies no horizontal overflow or console errors.
+This is headless runtime evidence; it does not replace the real Paper/Windows test.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

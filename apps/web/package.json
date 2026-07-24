@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "dev": "turbo run build --filter=@badgerbots/web^... && next dev",
+    "dev": "turbo run build --filter=@badgerbots/web^... && next dev --hostname 127.0.0.1",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
