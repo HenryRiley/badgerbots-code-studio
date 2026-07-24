@@ -2,9 +2,20 @@
 
 BadgerBots Code Studio is a clean-room, Minecraft-only coding platform for BadgerBots summer camps. It combines a block-based learning website, a teacher-laptop Minecraft host, a student connection helper, and a restricted Java-style educational runtime.
 
-This repository contains the Sheep City compiler/browser proof, local Checkpoint 2 control-plane implementation, local Checkpoint 3 runtime/Paper spike, the first Checkpoint 4 Tauri Host slice, the first Checkpoint 5 Connect slice, an initial Checkpoint 6 instructor help/progress/roster domain slice, a preliminary Checkpoint 7 scale/safety harness, a source-gated Checkpoint 8 curriculum-authoring slice, and a Checkpoint 9 connected loopback prototype—not a completed product. Begin with [`prompts/INITIAL_CODEX_PROMPT.md`](prompts/INITIAL_CODEX_PROMPT.md), then use the architecture and acceptance criteria in `docs/`.
+This repository contains the Sheep City compiler/browser proof, local control-plane and runtime
+slices, early Host and Connect applications, scale/curriculum foundations, the connected loopback
+prototype, and a Checkpoint 10 playable Paper developer prototype—not a completed product. Begin
+with [`prompts/INITIAL_CODEX_PROMPT.md`](prompts/INITIAL_CODEX_PROMPT.md), then use the architecture
+and acceptance criteria in `docs/`.
 
-Checkpoint 0 established repository/tooling evidence. Checkpoint 1 adds the canonical AST, restricted text grammar, Blockly adapters, instruction graph, source-gated curriculum schemas, and browser compiler harness. Checkpoint 2 adds portable control-plane migrations, authorization/lifecycle services, provider adapters, and tests; real provider execution remains pending. The Checkpoint 3 spike adds authenticated/idempotent runtime envelopes, headless TypeScript and Java interpreters, scoped cancellation/circuit breakers, a Paper API boundary, and immutable-world validation/reset. Checkpoint 4 has a Tauri/React Host shell, ordered setup/readiness model, native atomic status persistence, fail-closed server lifecycle, diagnostics, and a Windows NSIS CI build. Checkpoint 5 now has a Tauri/React Connect shell, stable native device identity, read-only standard Prism discovery, instructor-only mapping contracts, managed-only repair planning, and an unsigned Windows NSIS CI definition. The first Checkpoint 6 slice adds authorization-tested help requests, progress decisions, minimal instructor roster projections, and durable local visual/text drafts. The preliminary Checkpoint 7 slice adds private-world lease isolation, physical benchmark contracts, capacity admission rules, failure cleanup, and Host safe-degradation policy. The Checkpoint 8 slice adds structured curriculum drafts, optimistic revisions, preview/duplication/review/publish safeguards, flexible benchmarks, and a local instructor lab. Checkpoint 9 connects generated session/join identity, canonical optimistic saves, signed Host envelopes, atomic deployment, last-known-good retention, attributed Sheep City actions, and deterministic Stop through a loopback-only service and browser console. See the [Checkpoint 9 record](docs/checkpoints/0009-connected-local-prototype.md), [connected prototype guide](docs/connected-prototype.md), [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md), and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been transcribed, and no deployed cloud control plane, real Paper execution, usable world asset, measured 25-student capacity, managed client profile, or accepted Windows installer is claimed as complete. The connected prototype deliberately uses memory-only state and a headless runtime adapter.
+Checkpoint 10 adds a checksummed Gradle/Paper build, compiled plugin, authenticated local
+Host-to-plugin file bridge, and an original procedurally generated Sheep City world. The Web
+prototype can deploy Run/Stop to Paper without a restart; physical Windows/Minecraft evidence is
+still required before acceptance. See the [playable prototype guide](docs/playable-paper-prototype.md),
+[risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
+and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been
+transcribed, and no deployed cloud control plane, measured 25-student capacity, managed client
+profile, or accepted Windows installer is claimed as complete.
 
 ## Product shape
 
@@ -77,3 +88,10 @@ npx --yes pnpm@11.16.0 prototype
 
 Open <http://127.0.0.1:3000/prototype>. This proves the connected application contract without
 pretending to be a cloud deployment or Minecraft server.
+
+To run the same workflow through real local Paper and the compiled BadgerBots plugin, read the
+[playable Sheep City guide](docs/playable-paper-prototype.md), accept the Minecraft EULA, then run:
+
+```sh
+BADGERBOTS_ACCEPT_MINECRAFT_EULA=true npx --yes pnpm@11.16.0 prototype:minecraft
+```

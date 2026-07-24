@@ -1,7 +1,7 @@
 schemaVersion: 1
 assetId: sheep-city-original-prototype
 creator: BadgerBots
-license: internal-use
+license: BadgerBots-owned-original-internal-prototype
 sourceUrl: null
 redistributionAllowed: false
-reviewStatus: pending-creation
+reviewStatus: generated-from-repository-code-no-third-party-map-assets

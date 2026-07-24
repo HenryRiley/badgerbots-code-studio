@@ -31,6 +31,7 @@ interface PrototypeSnapshot {
   worldId?: string;
   actions: PrototypeAction[];
   deliveries: DeliveryRecord[];
+  runtimeMode: "headless" | "paper";
 }
 
 export function ConnectedPrototypeLab() {
@@ -175,11 +176,10 @@ export function ConnectedPrototypeLab() {
     <main className="prototype-shell">
       <header className="prototype-header">
         <div>
-          <p className="eyebrow">Checkpoint 9 · connected local prototype</p>
+          <p className="eyebrow">Checkpoint 10 · playable Paper prototype</p>
           <h1>Web → control plane → Host → runtime</h1>
           <p>
-            A real signed integration path using an in-memory control plane and headless Minecraft
-            adapter.
+            A signed integration path that can deploy the editor program into a local Paper server.
           </p>
         </div>
         <Link className="header-link" href="/">
@@ -188,9 +188,18 @@ export function ConnectedPrototypeLab() {
       </header>
 
       <section className="notice" aria-label="Prototype limitation">
-        <strong>Still not Paper acceptance:</strong> the Host protocol and atomic runtime are real,
-        but Minecraft events are fired through the headless adapter on this Mac. The API binds to
-        loopback only and loses all data when stopped.
+        {snapshot?.runtimeMode === "paper" ? (
+          <>
+            <strong>Paper prototype mode:</strong> join the local server before Run. Fire a bow at
+            the target, walk onto gold, and defeat the red sheep in Minecraft. State is still local
+            and memory-only.
+          </>
+        ) : (
+          <>
+            <strong>Headless fallback mode:</strong> Minecraft events are simulated locally. Start
+            with the Paper prototype command for real in-game execution.
+          </>
+        )}
       </section>
 
       <section className="prototype-grid">
@@ -292,24 +301,39 @@ export function ConnectedPrototypeLab() {
           <div className="prototype-card-title">
             <span>3</span>
             <div>
-              <h2>Fire scoped events</h2>
-              <p>Runs attributed Sheep City instructions under runtime limits.</p>
+              <h2>
+                {snapshot?.runtimeMode === "paper" ? "Test in Minecraft" : "Fire scoped events"}
+              </h2>
+              <p>
+                {snapshot?.runtimeMode === "paper"
+                  ? "Real Paper events now drive the scoped program."
+                  : "Runs attributed Sheep City instructions under runtime limits."}
+              </p>
             </div>
           </div>
           <div className="prototype-event-grid">
-            <button disabled={busy || !running} onClick={() => void fireEvent("projectile_hit")}>
+            <button
+              disabled={busy || !running || snapshot?.runtimeMode === "paper"}
+              onClick={() => void fireEvent("projectile_hit")}
+            >
               projectileHit()
             </button>
             <button
-              disabled={busy || !running}
+              disabled={busy || !running || snapshot?.runtimeMode === "paper"}
               onClick={() => void fireEvent("player_move", "GOLD_BLOCK")}
             >
               playerMove(GOLD_BLOCK)
             </button>
-            <button disabled={busy || !running} onClick={() => void fireEvent("sheep_spawn")}>
+            <button
+              disabled={busy || !running || snapshot?.runtimeMode === "paper"}
+              onClick={() => void fireEvent("sheep_spawn")}
+            >
               onSheepSpawn()
             </button>
-            <button disabled={busy || !running} onClick={() => void fireEvent("sheep_death")}>
+            <button
+              disabled={busy || !running || snapshot?.runtimeMode === "paper"}
+              onClick={() => void fireEvent("sheep_death")}
+            >
               onSheepDeath()
             </button>
           </div>
@@ -340,7 +364,10 @@ export function ConnectedPrototypeLab() {
           </div>
           <div>
             <dt>Runtime</dt>
-            <dd>{snapshot?.activeProgramVersionId ? "active" : "stopped"}</dd>
+            <dd>
+              {snapshot?.runtimeMode ?? "unknown"} ·{" "}
+              {snapshot?.activeProgramVersionId ? "active" : "stopped"}
+            </dd>
           </div>
         </dl>
       </section>
@@ -381,7 +408,11 @@ export function ConnectedPrototypeLab() {
                 ))}
             </ol>
           ) : (
-            <p>No headless Minecraft actions recorded yet.</p>
+            <p>
+              {snapshot?.runtimeMode === "paper"
+                ? "Paper actions happen inside Minecraft; signed deployments appear at left."
+                : "No headless Minecraft actions recorded yet."}
+            </p>
           )}
         </article>
       </section>

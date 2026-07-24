@@ -1,4 +1,6 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import {
   ControlPlaneService,
   HmacSecretHasher,
@@ -59,6 +61,7 @@ export interface PrototypeSnapshot {
   worldId?: string;
   actions: PrototypeAction[];
   deliveries: DeliveryRecord[];
+  runtimeMode: "headless" | "paper";
 }
 
 interface PrototypeIdentity {
@@ -115,6 +118,93 @@ class PrototypeGameAdapter implements MinecraftRuntimeAdapter {
   }
 }
 
+interface PaperBridgeResponse {
+  commandId: string;
+  status: "accepted" | "rejected";
+  code?: string;
+  activeProgramVersionId?: string;
+  message: string;
+}
+
+export class PaperFileClient {
+  private readonly secret: Buffer;
+
+  constructor(
+    private readonly root: string,
+    encodedSecret: string,
+  ) {
+    this.secret = Buffer.from(encodedSecret, "base64url");
+    if (this.secret.byteLength < 32)
+      throw new Error("Paper bridge secret must contain at least 32 bytes.");
+  }
+
+  async deliver(
+    envelope: SignedRuntimeEnvelope,
+    expectedScope: RuntimeScopeAddress,
+  ): Promise<PaperBridgeResponse> {
+    const payload = JSON.stringify({
+      commandId: envelope.commandId,
+      kind: envelope.command.kind,
+      scope: expectedScope,
+      ...(envelope.command.kind === "deploy_program"
+        ? {
+            programVersionId: envelope.command.programVersionId,
+            ...(envelope.command.expectedActiveVersionId
+              ? { expectedActiveVersionId: envelope.command.expectedActiveVersionId }
+              : {}),
+            graph: envelope.command.graph,
+          }
+        : {}),
+    });
+    const inbox = path.join(this.root, "inbox");
+    const outbox = path.join(this.root, "outbox");
+    await Promise.all([mkdir(inbox, { recursive: true }), mkdir(outbox, { recursive: true })]);
+    const filename = `${envelope.commandId}.json`;
+    const destination = path.join(inbox, filename);
+    const temporary = `${destination}.new`;
+    await writeFile(temporary, JSON.stringify({ payload, signature: this.sign(payload) }), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await rename(temporary, destination);
+    const responsePath = path.join(outbox, filename);
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try {
+        const wrapper = JSON.parse(await readFile(responsePath, "utf8")) as {
+          payload: string;
+          signature: string;
+        };
+        if (!this.verify(wrapper.payload, wrapper.signature))
+          throw new Error("Paper response signature was rejected.");
+        await unlink(responsePath).catch(() => undefined);
+        const response = JSON.parse(wrapper.payload) as PaperBridgeResponse;
+        if (response.commandId !== envelope.commandId)
+          throw new Error("Paper response command identifier did not match.");
+        return response;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !("code" in error) ||
+          (error as NodeJS.ErrnoException).code !== "ENOENT"
+        )
+          throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error("Paper did not acknowledge the Host command within 10 seconds.");
+  }
+
+  private sign(payload: string): string {
+    return createHmac("sha256", this.secret).update(payload).digest("hex");
+  }
+
+  private verify(payload: string, signature: string): boolean {
+    if (!/^[0-9a-f]{64}$/i.test(signature)) return false;
+    return timingSafeEqual(Buffer.from(this.sign(payload), "hex"), Buffer.from(signature, "hex"));
+  }
+}
+
 class LoopbackHostBridge {
   private readonly cloudReplay = new MemoryReplayLedger();
   private hostSequence = 0;
@@ -125,6 +215,7 @@ class LoopbackHostBridge {
     private readonly cloudId: string,
     private readonly authenticator: NodeHmacSha256Authenticator,
     private readonly runtime: AtomicProgramRuntime,
+    private readonly paper: PaperFileClient | undefined,
   ) {}
 
   async receive(
@@ -157,6 +248,18 @@ class LoopbackHostBridge {
           "active_version_conflict",
           this.activeProgramVersionId,
         );
+      if (this.paper) {
+        const result = await this.paper.deliver(envelope, expectedScope);
+        if (result.status !== "accepted")
+          return this.acknowledge(
+            envelope,
+            "rejected",
+            result.code ?? "paper_rejected",
+            result.activeProgramVersionId ?? this.activeProgramVersionId,
+          );
+        this.activeProgramVersionId = result.activeProgramVersionId;
+        return this.acknowledge(envelope, "accepted", undefined, this.activeProgramVersionId);
+      }
       const result = this.runtime.deploy(
         envelope.scope,
         envelope.command.programVersionId,
@@ -173,7 +276,18 @@ class LoopbackHostBridge {
       return this.acknowledge(envelope, "accepted", undefined, this.activeProgramVersionId);
     }
     if (envelope.command.kind === "stop_program") {
-      this.runtime.stop(envelope.scope);
+      if (this.paper) {
+        const result = await this.paper.deliver(envelope, expectedScope);
+        if (result.status !== "accepted")
+          return this.acknowledge(
+            envelope,
+            "rejected",
+            result.code ?? "paper_rejected",
+            this.activeProgramVersionId,
+          );
+      } else {
+        this.runtime.stop(envelope.scope);
+      }
       this.activeProgramVersionId = undefined;
       return this.acknowledge(envelope, "accepted");
     }
@@ -225,6 +339,7 @@ export class ConnectedPrototype {
   private readonly adapter = new PrototypeGameAdapter();
   private readonly runtime = new AtomicProgramRuntime(this.adapter, new ExecutionScopeRegistry());
   private readonly host: LoopbackHostBridge;
+  private readonly paper: PaperFileClient | undefined;
   private readonly cloudReplay = new MemoryReplayLedger();
   private readonly deliveries: DeliveryRecord[] = [];
   private readonly cloudId = `prototype-cloud-${randomUUID()}`;
@@ -253,7 +368,21 @@ export class ConnectedPrototype {
     );
     this.bootstrapSecret = bootstrapSecret;
     this.authenticator = new NodeHmacSha256Authenticator(randomBytes(32));
-    this.host = new LoopbackHostBridge(this.hostId, this.cloudId, this.authenticator, this.runtime);
+    const bridgeDirectory = process.env.BADGERBOTS_PAPER_BRIDGE_DIR;
+    const bridgeSecret = process.env.BADGERBOTS_PAPER_BRIDGE_SECRET;
+    if ((bridgeDirectory && !bridgeSecret) || (!bridgeDirectory && bridgeSecret))
+      throw new Error("Paper bridge directory and secret must be configured together.");
+    this.paper =
+      bridgeDirectory && bridgeSecret
+        ? new PaperFileClient(bridgeDirectory, bridgeSecret)
+        : undefined;
+    this.host = new LoopbackHostBridge(
+      this.hostId,
+      this.cloudId,
+      this.authenticator,
+      this.runtime,
+      this.paper,
+    );
   }
 
   private readonly bootstrapSecret: string;
@@ -382,6 +511,8 @@ export class ConnectedPrototype {
     event: PrototypeEvent;
     materialUnderPlayer?: "GOLD_BLOCK" | "OTHER";
   }): PrototypeSnapshot {
+    if (this.paper)
+      throw new Error("Paper mode uses real Minecraft events. Test the behavior inside Minecraft.");
     if (!this.activeProgramVersionId) throw new Error("Deploy a program before firing events.");
     this.adapter.materialUnderPlayer = input.materialUnderPlayer ?? "OTHER";
     this.runtime.execute(this.scope(), {
@@ -420,6 +551,7 @@ export class ConnectedPrototype {
       ...(this.student ? { worldId: this.scope().worldId } : {}),
       actions: structuredClone(this.adapter.actions),
       deliveries: structuredClone(this.deliveries),
+      runtimeMode: this.paper ? "paper" : "headless",
     };
   }
 

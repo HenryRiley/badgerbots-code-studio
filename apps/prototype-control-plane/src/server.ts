@@ -158,8 +158,10 @@ export function createPrototypeRequestHandler(state = createPrototypeServerState
     if (request.method === "GET" && url.pathname === "/health") {
       json(response, 200, {
         ok: true,
-        mode: "loopback-memory-only",
-        paperConnected: false,
+        mode: process.env.BADGERBOTS_PAPER_BRIDGE_DIR
+          ? "loopback-paper-prototype"
+          : "loopback-memory-only",
+        paperConnected: Boolean(process.env.BADGERBOTS_PAPER_BRIDGE_DIR),
       });
       return;
     }
