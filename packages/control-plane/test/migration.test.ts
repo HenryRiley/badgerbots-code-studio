@@ -112,4 +112,30 @@ describe("portable control-plane migration", () => {
     expect(sql).toContain("recovery_expires_at > now() + interval '5 hours'");
     expect(sql).toContain("grant execute on function public.load_prototype_lab_recovery");
   });
+
+  it("adds private camper realtime identity and a durable outbound Host queue", async () => {
+    const core = await readFile(
+      resolve(root, "database/migrations/0005_connected_classroom.sql"),
+      "utf8",
+    );
+    const security = await readFile(
+      resolve(root, "database/providers/supabase/0006_connected_classroom_security.sql"),
+      "utf8",
+    );
+    expect(core).toContain("add column auth_subject uuid unique");
+    expect(core).toContain("create table public.classroom_commands");
+    expect(core).toContain("create table public.owner_bootstrap_state");
+    expect(core).toContain("normalized_email not like 'prototype-%@invalid.example'");
+    expect(core).toContain("unique (host_installation_id, sequence)");
+    expect(core).toContain("for update skip locked");
+    expect(core).toContain("record_failed_classroom_join");
+    expect(core).toContain("alter table public.classroom_commands enable row level security");
+    expect(core).not.toContain("pairing_credential_ciphertext");
+    expect(security).toContain("create function app.current_camper_id()");
+    expect(security).toContain("create policy workspaces_camper_select");
+    expect(security).not.toContain("grant select on public.sessions to anon");
+    expect(security).toContain(
+      "alter publication supabase_realtime add table public.classroom_commands",
+    );
+  });
 });

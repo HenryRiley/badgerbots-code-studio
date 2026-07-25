@@ -16,6 +16,7 @@
     "clean": "sh scripts/clean.sh",
     "clean:all": "sh scripts/clean.sh --dependencies",
     "dev": "turbo run dev",
+    "edge:check": "deno fmt --check supabase/functions && deno lint supabase/functions && deno check --config supabase/functions/deno.json supabase/functions/classroom-api/index.ts && deno test --config supabase/functions/deno.json supabase/functions/tests/classroom-test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "turbo run build --filter=@badgerbots/program-model --filter=@badgerbots/shared-types && eslint .",

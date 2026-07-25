@@ -6,6 +6,7 @@ import {
   createPrototypePersistenceFromEnvironment,
   type PrototypePersistence,
 } from "./persistence.js";
+import { startClassroomHostWorkerFromEnvironment } from "./classroom-host.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4180;
@@ -335,6 +336,7 @@ function isPrototypeEvent(value: string): value is PrototypeEvent {
 
 export function startPrototypeServer(): ReturnType<typeof createServer> {
   const state = createPrototypeServerState();
+  const classroomHost = startClassroomHostWorkerFromEnvironment();
   const handler = createPrototypeRequestHandler(state);
   const server = createServer((request, response) => {
     void handler(request, response).catch(() => {
@@ -349,6 +351,7 @@ export function startPrototypeServer(): ReturnType<typeof createServer> {
       `BadgerBots connected prototype listening on http://${HOST}:${PORT} (loopback only; ${runtimeMode} runtime; ${state.persistence.mode} persistence).\n`,
     );
   });
+  server.once("close", () => classroomHost?.stop());
   return server;
 }
 

@@ -14,6 +14,7 @@ export default defineConfig([
       "**/node_modules/**",
       "**/out/**",
       "**/target/**",
+      "supabase/functions/**",
       "**/work/**",
       "**/* 2.ts",
       "**/*.tsbuildinfo",

@@ -17,6 +17,12 @@ It is intentionally a developer prototype:
 
 It does not represent deployed cloud authentication. Paper mode performs real in-game execution.
 
+When the dedicated Host ID/token, classroom API URL, and publishable key documented in
+`docs/connected-classroom-setup.md` are present, the process also runs the Checkpoint 13 outbound
+Host worker. It polls the deployed Edge API, verifies command HMAC, expiry, and sequence,
+validates/compiles the canonical AST locally, delivers through the authenticated Paper bridge, and
+acknowledges the durable database command. It opens no inbound port.
+
 Start it alongside Code Studio Web:
 
 ```sh

@@ -15,6 +15,7 @@
     "@badgerbots/java-dsl": "workspace:*",
     "@badgerbots/program-model": "workspace:*",
     "@badgerbots/runtime-protocol": "workspace:*",
+    "@supabase/supabase-js": "2.110.8",
     "next": "16.2.11",
     "react": "19.2.8",
     "react-dom": "19.2.8"

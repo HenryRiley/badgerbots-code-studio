@@ -10,4 +10,7 @@ Apply the core migration first, then the Supabase overlay. In the project dashbo
 - configure password length/character requirements and custom SMTP before production;
 - do not activate a camp until the encrypted export/restore readiness gate passes.
 
-No Supabase project has been created or modified by this repository.
+The owner has manually validated the earlier prototype persistence against a Supabase Free project.
+The repository itself does not create or modify external projects. For the connected classroom,
+apply portable migration `0005`, then provider overlay `0006`, deploy `classroom-api`, and follow
+`docs/connected-classroom-setup.md`.
