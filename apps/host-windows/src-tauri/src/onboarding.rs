@@ -515,7 +515,7 @@ fn protect_for_current_user(plaintext: &[u8]) -> Result<Vec<u8>, String> {
         Foundation::LocalFree,
         Security::Cryptography::{CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData},
     };
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: u32::try_from(plaintext.len())
             .map_err(|_| "Host credential is too large.".to_string())?,
         pbData: plaintext.as_ptr().cast_mut(),
@@ -523,7 +523,7 @@ fn protect_for_current_user(plaintext: &[u8]) -> Result<Vec<u8>, String> {
     let mut output = CRYPT_INTEGER_BLOB::default();
     let succeeded = unsafe {
         CryptProtectData(
-            &mut input,
+            &input,
             ptr::null(),
             ptr::null(),
             ptr::null(),
@@ -560,7 +560,7 @@ fn unprotect_for_current_user(protected: &[u8]) -> Result<Vec<u8>, String> {
             CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptUnprotectData,
         },
     };
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: u32::try_from(protected.len())
             .map_err(|_| "Protected Host credential is too large.".to_string())?,
         pbData: protected.as_ptr().cast_mut(),
@@ -568,7 +568,7 @@ fn unprotect_for_current_user(protected: &[u8]) -> Result<Vec<u8>, String> {
     let mut output = CRYPT_INTEGER_BLOB::default();
     let succeeded = unsafe {
         CryptUnprotectData(
-            &mut input,
+            &input,
             ptr::null_mut(),
             ptr::null(),
             ptr::null(),
