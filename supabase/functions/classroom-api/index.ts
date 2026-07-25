@@ -4,6 +4,7 @@ import {
   createJoinCode,
   hmacHex,
   isRecord,
+  nativeHostOnboardingActionAllowed,
   optionalString,
   requiredRevision,
   requiredString,
@@ -46,7 +47,9 @@ interface CamperContext {
 Deno.serve(async (request) => {
   const origin = request.headers.get("origin") ?? "";
   const hostRequest = request.headers.has("x-badgerbots-host-id");
-  if (!hostRequest && !allowedOrigins.has(origin)) {
+  const nativeHostOnboarding =
+    request.headers.get("x-badgerbots-client") === "host-onboarding-v1";
+  if (!hostRequest && !nativeHostOnboarding && !allowedOrigins.has(origin)) {
     return response(403, { error: "This Code Studio origin is not allowed." });
   }
   if (request.method === "OPTIONS") return preflight(origin);
@@ -61,6 +64,13 @@ Deno.serve(async (request) => {
   try {
     const body = await readBody(request);
     const action = requiredString(body, "action", 64);
+    if (nativeHostOnboarding && !nativeHostOnboardingActionAllowed(action)) {
+      throw new ClassroomApiError(
+        403,
+        "forbidden",
+        "Native Host onboarding cannot perform this classroom action.",
+      );
+    }
     const result = await route(action, body, request);
     return response(200, result, origin);
   } catch (error) {
@@ -1170,7 +1180,7 @@ function preflight(origin: string): Response {
       "access-control-allow-origin": origin,
       "access-control-allow-methods": "POST, OPTIONS",
       "access-control-allow-headers":
-        "authorization, apikey, content-type, x-badgerbots-host-id, x-badgerbots-host-token",
+        "authorization, apikey, content-type, x-badgerbots-client, x-badgerbots-host-id, x-badgerbots-host-token",
       "access-control-max-age": "600",
       vary: "origin",
     },

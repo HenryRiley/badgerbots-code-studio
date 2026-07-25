@@ -6,6 +6,7 @@ import {
   createInitialHostSnapshot,
   requestServerTransition,
   sanitizeDiagnosticText,
+  validateHostServiceInput,
   type HostSnapshot,
 } from "./domain.js";
 
@@ -94,5 +95,23 @@ describe("Host setup and server safety model", () => {
         "teacher@example.com token=abcdef password=hunter2 authorization:BearerSecretValue",
       ),
     ).toBe("[redacted-email] [redacted-secret] [redacted-secret] [redacted-secret]");
+  });
+
+  it("accepts only the public Supabase onboarding boundary", () => {
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "https://camp-project.supabase.co",
+        publishableKey: "sb_publishable_example-key-long-enough",
+      }),
+    ).toEqual([]);
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "http://camp-project.supabase.co/rest/v1",
+        publishableKey: "sb_secret_never-place-this-in-the-host-form",
+      }),
+    ).toEqual([
+      "Use the bare HTTPS Supabase Project URL.",
+      "Use the browser-safe Supabase Publishable key.",
+    ]);
   });
 });

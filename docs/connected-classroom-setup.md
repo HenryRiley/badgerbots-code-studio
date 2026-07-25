@@ -2,6 +2,11 @@
 
 This is an internal prototype procedure. Use fake camper names. It does not authorize use with real children.
 
+Checkpoint 14 replaces the instructor-facing Host pairing environment variables with the native
+Windows wizard. The CLI steps below remain only for developers testing the unbundled Paper runtime.
+After updating to Checkpoint 14, redeploy `classroom-api` once so the restricted native onboarding
+client can call the authenticated profile and pairing actions.
+
 ## 1. Apply the two new SQL files
 
 From the repository root on Windows, copy and run each file separately in Supabase SQL Editor:

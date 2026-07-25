@@ -4,7 +4,11 @@ Checkpoint 4 uses Tauri 2 to produce an x64 NSIS `-setup.exe` on the pinned Wind
 
 The pull-request workflow builds an **unsigned internal prototype**, records its SHA-256, and retains the artifact for 14 days. It is not a production release and may trigger Microsoft SmartScreen. Production distribution remains blocked on BadgerBots code-signing credentials, signature/timestamp verification, authenticated updates, repair/upgrade/uninstall testing, and physical Windows 10/11 evidence.
 
-The current installer contains only the Host application shell. It does not bundle Java, Paper, the plugin, or a world because their exact artifacts, licenses, and checksums are unresolved. It does not create a firewall rule. Adding those operations before their verification gates pass would turn a visible limitation into a supply-chain or machine-configuration risk.
+The current installer contains the real native classroom onboarding flow. In a build configured
+with the public repository variables, an instructor can sign in, select a location, pair the
+laptop, persist its DPAPI-protected Host credential, and run native platform/RAM checks without a
+terminal. It does not yet bundle Java, Paper, the plugin, or a world, and it does not create a
+firewall rule.
 
 ## Retrieving a CI prototype
 
