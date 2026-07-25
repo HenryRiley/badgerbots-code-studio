@@ -21,22 +21,22 @@ Both queries must finish successfully. Do not re-run an already successful migra
 Get the project reference from the Supabase URL. For `https://abcdef.supabase.co`, the reference is `abcdef`.
 
 ```powershell
-npx.cmd --yes supabase@2.109.1 login
-npx.cmd --yes supabase@2.109.1 link --project-ref YOUR_PROJECT_REFERENCE
+corepack.cmd pnpm dlx supabase@2.109.1 login
+corepack.cmd pnpm dlx supabase@2.109.1 link --project-ref YOUR_PROJECT_REFERENCE
 ```
 
 Generate a credential pepper without placing the value in Git:
 
 ```powershell
 $credentialPepper = node.exe -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-npx.cmd --yes supabase@2.109.1 secrets set "BADGERBOTS_CREDENTIAL_PEPPER=$credentialPepper"
-npx.cmd --yes supabase@2.109.1 functions deploy classroom-api
+corepack.cmd pnpm dlx supabase@2.109.1 secrets set "BADGERBOTS_CREDENTIAL_PEPPER=$credentialPepper"
+corepack.cmd pnpm dlx supabase@2.109.1 functions deploy classroom-api
 ```
 
 The function defaults to the four local Code Studio origins. Before a hosted Web deployment, add its exact HTTPS origin:
 
 ```powershell
-npx.cmd --yes supabase@2.109.1 secrets set "BADGERBOTS_WEB_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,https://YOUR-WEB-ORIGIN"
+corepack.cmd pnpm dlx supabase@2.109.1 secrets set "BADGERBOTS_WEB_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,https://YOUR-WEB-ORIGIN"
 ```
 
 ## 3. Bootstrap the real owner once
