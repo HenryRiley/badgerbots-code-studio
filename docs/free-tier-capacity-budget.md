@@ -33,7 +33,15 @@ World templates, Minecraft backups, installer artifacts, videos, and verbose dia
 | Supabase Edge Functions    |      500,000 calls/month | 250,000 calls/month |
 | Resend transactional email |     3,000/month, 100/day |              50/day |
 
-Autosave uses an atomic PostgreSQL operation with optimistic revisions and mutation idempotency rather than one Edge Function invocation per keystroke. Edge Functions are reserved for privileged joins, bootstrap, pairing, retention, and control commands. Camper workflows send no email.
+Autosave uses an atomic PostgreSQL operation with optimistic revisions and mutation idempotency.
+Checkpoint 13 invokes the Edge Function only after a 1.5-second valid-program debounce rather than
+per keystroke. Planning at 200 acknowledged program saves per camper per day is 100,000 monthly
+invocations. Five-minute fallback reads for 25 campers and five instructors add about 43,200; idle
+Host polling every five seconds for six hours over 20 days adds about 86,400. Joins, help, pairing,
+and control commands keep the planned total just below the 250,000 internal review threshold.
+Realtime delivery must work in the staged test; shortening fallback/Host polling globally would
+break the free-tier budget. Camper presence uses narrow direct RLS writes rather than Edge
+invocations. Camper workflows send no email.
 
 ## Availability and recovery gate
 

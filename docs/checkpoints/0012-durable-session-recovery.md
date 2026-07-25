@@ -1,6 +1,6 @@
 # Checkpoint 12: durable session recovery and synchronized browser state
 
-Status: implementation complete; live Supabase validation required
+Status: implementation and owner-reported live Supabase validation complete
 
 ## Working
 
@@ -36,12 +36,12 @@ Status: implementation complete; live Supabase validation required
   query string, log, or realtime channel name.
 - This local prototype still must not be exposed directly to the LAN or public Internet.
 
-## Manual validation still required
+## Manual validation
 
-The owner has not created a Supabase project, so no live database claim is made. When ready, follow
-`docs/playable-paper-prototype.md`, apply migrations through the documented migration workflow,
-then verify `supabase · synced`, browser refresh, API restart recovery, and stale two-tab conflict
-handling.
+On 2026-07-25 the owner reported that the Supabase readiness check, `supabase · synced` state,
+browser refresh recovery, database rows, Node/Paper restart recovery, and real Minecraft behavior
+all worked on Windows. Detailed screenshots/build IDs and an adversarial two-browser conflict log
+remain desirable release evidence.
 
 ## Next prototype increment
 

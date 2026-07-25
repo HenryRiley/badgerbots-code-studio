@@ -59,6 +59,15 @@ verification covers real projectile, movement/material, sheep spawn/death, inval
 last-known-good, and Stop behavior. Until that journey is recorded on the Windows test PC, this is
 a playable implementation rather than accepted real-environment evidence.
 
+Checkpoint 13 adds Deno checks for the deployable Edge Function and tests its HMAC class-code
+helpers, minimal camper names, strict Sheep City shape, and unsafe values. SQL contract tests cover
+temporary Auth subjects, one-time owner bootstrap after developer-only prototype rows, RLS,
+persistent join throttling, ordered command locking/redelivery, and Realtime publication. Host
+tests compile the canonical cloud program locally, reject unsafe replacements before Paper, and
+bind delivery signatures to a dedicated credential and exact payload. Live gates are
+migration/function deployment, owner/assistant authorization, two-device RLS/Realtime, deliberate
+save conflict, Host reconnect/redelivery, and cloud-to-real-Paper Run/Stop.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

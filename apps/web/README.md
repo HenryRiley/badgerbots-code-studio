@@ -16,3 +16,12 @@ prove a bad replacement retains the last good version, and stop the execution sc
 explicitly does not claim a real Paper connection.
 
 Do not implement direct browser-to-teacher-host networking. The host maintains an authenticated outbound connection to the cloud control plane; Minecraft clients connect locally to the teacher laptop.
+
+Checkpoint 13 adds `/classroom`. It uses Supabase instructor Auth, temporary synthetic camper Auth
+subjects created only after a valid class code, RLS-filtered Realtime hints, a role-aware roster,
+remote Blockly load/push with explicit optimistic conflicts, help handling, and durable Run/Stop
+status. When the block editor is opened from a bound classroom workspace, valid canonical changes
+retain immediate local save and receive a 1.5-second cloud debounce.
+
+The route requires only browser-safe `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. It never receives a Secret/service-role key.

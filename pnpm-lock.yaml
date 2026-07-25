@@ -145,6 +145,9 @@ importers:
       "@badgerbots/runtime-protocol":
         specifier: workspace:*
         version: link:../../packages/runtime-protocol
+      "@supabase/supabase-js":
+        specifier: 2.110.8
+        version: 2.110.8
       next:
         specifier: 16.2.11
         version: 16.2.11(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -27,6 +27,7 @@ import {
   saveLocalEditorState,
   type LocalEditorState,
 } from "./local-editor-storage";
+import { autosaveBoundProgram } from "./classroom/classroom-api";
 
 interface ConsoleEntry {
   id: number;
@@ -51,6 +52,7 @@ export function CompilerHarness() {
     message: "Loading local work…",
   });
   const [workspaceSyncVersion, setWorkspaceSyncVersion] = useState(0);
+  const [editorLoaded, setEditorLoaded] = useState(false);
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
     {
       id: 1,
@@ -123,6 +125,7 @@ export function CompilerHarness() {
             },
       );
       writeConsole("success", "Restored the last acknowledged local program and visual draft.");
+      setEditorLoaded(true);
       return;
     }
     if (restored.kind === "error") {
@@ -131,10 +134,48 @@ export function CompilerHarness() {
         `Saved work could not be restored: ${restored.message}. It was not overwritten.`,
       );
       setSaveStatus({ kind: "error", message: "Existing local save could not be read" });
+      setEditorLoaded(true);
       return;
     }
     persistEditorState(editorStateRef.current);
+    setEditorLoaded(true);
   }, [persistEditorState, writeConsole]);
+
+  useEffect(() => {
+    if (!editorLoaded) return;
+    const timeout = window.setTimeout(() => {
+      void autosaveBoundProgram(program)
+        .then((result) => {
+          if (result.kind === "saved") {
+            setSaveStatus({
+              kind: "saved",
+              message: `Local save acknowledged; cloud revision ${result.revision} synced`,
+            });
+            writeConsole("success", `Cloud autosave accepted revision ${result.revision}.`);
+          } else if (result.kind === "conflict") {
+            setSaveStatus({
+              kind: "error",
+              message: `Cloud conflict at revision ${result.actualRevision}; local blocks are preserved`,
+            });
+            writeConsole(
+              "error",
+              `Cloud revision ${result.actualRevision} changed first. Your local blocks were preserved; return to Connected Classroom to review before retrying.`,
+            );
+          }
+        })
+        .catch((caught: unknown) => {
+          setSaveStatus({
+            kind: "error",
+            message: "Local save is safe; cloud autosave is offline",
+          });
+          writeConsole(
+            "error",
+            `Cloud autosave failed: ${caught instanceof Error ? caught.message : "unknown error"}. Local work is still saved.`,
+          );
+        });
+    }, 1_500);
+    return () => window.clearTimeout(timeout);
+  }, [editorLoaded, program, writeConsole]);
 
   useEffect(() => {
     if (!mountRef.current || workspaceRef.current) return;
@@ -360,6 +401,9 @@ export function CompilerHarness() {
           </div>
         </div>
         <div className="header-actions">
+          <Link className="header-link" href="/classroom">
+            Connected classroom
+          </Link>
           <Link className="header-link" href="/curriculum">
             Curriculum lab
           </Link>
@@ -374,8 +418,9 @@ export function CompilerHarness() {
       </header>
 
       <section className="notice" aria-label="Prototype limitation">
-        <strong>No Minecraft connection:</strong> this harness proves blocks, text, validation,
-        serialization, and local autosave only.
+        <strong>Block editor:</strong> work saves locally immediately. When opened from Connected
+        Classroom, valid canonical changes also autosave to that cloud workspace after 1.5 seconds;
+        Run remains an explicit classroom action.
       </section>
 
       <section className="workspace-card">

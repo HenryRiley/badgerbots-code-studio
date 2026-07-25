@@ -4,7 +4,8 @@ BadgerBots Code Studio is a clean-room, Minecraft-only coding platform for Badge
 
 This repository contains the Sheep City compiler/browser proof, local control-plane and runtime
 slices, early Host and Connect applications, scale/curriculum foundations, and a playable Paper
-developer prototype with optional Supabase persistence—not a completed product. Begin
+developer prototype with validated Supabase persistence and a deployable connected-classroom
+slice—not a completed product. Begin
 with [`prompts/INITIAL_CODEX_PROMPT.md`](prompts/INITIAL_CODEX_PROMPT.md), then use the architecture
 and acceptance criteria in `docs/`.
 
@@ -12,7 +13,10 @@ The current prototype adds a checksummed Gradle/Paper build, compiled plugin, au
 Host-to-plugin file bridge, and an original procedurally generated Sheep City world. The Web
 prototype can deploy Run/Stop to Paper without a restart. A real Windows playtest has confirmed
 the complete Sheep City behavior, equipment, fall protection, and respawn path. Optional Supabase
-mode now adds encrypted four-hour browser/API recovery, pending live provider validation. See the
+mode now adds encrypted four-hour browser/API recovery; the owner has validated that path against
+Supabase Free. Checkpoint 13 adds real instructor/camper Auth boundaries, weekly sessions, Realtime
+workspace hints, a dashboard, and an outbound durable Host command queue. Its new migration,
+Edge Function deployment, and two-device cloud-to-Paper path still require manual validation. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
 and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been
@@ -90,6 +94,11 @@ npx --yes pnpm@11.16.0 prototype
 
 Open <http://127.0.0.1:3000/prototype>. This proves the connected application contract without
 pretending to be a cloud deployment or Minecraft server.
+
+After applying and deploying Checkpoint 13, open <http://127.0.0.1:3000/classroom> for instructor
+login, weekly sessions, camper join, remote edits, help, and outbound Run/Stop. Follow
+[`docs/connected-classroom-setup.md`](docs/connected-classroom-setup.md); do not place provider
+Secret keys in browser variables.
 
 To run the same workflow through real local Paper and the compiled BadgerBots plugin, read the
 [playable Sheep City guide](docs/playable-paper-prototype.md), accept the Minecraft EULA, then run:
