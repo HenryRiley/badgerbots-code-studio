@@ -139,11 +139,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build plugin for the Host installer
+        working-directory: minecraft/paper-plugin
         shell: pwsh
         run: |
-          .\minecraft\paper-plugin\gradlew.bat --no-daemon check jar
-          New-Item -ItemType Directory -Force apps/host-windows/src-tauri/bundled | Out-Null
-          Copy-Item minecraft/paper-plugin/build/libs/badgerbots-paper-plugin.jar apps/host-windows/src-tauri/bundled/badgerbots-paper-plugin.jar
+          .\gradlew.bat --no-daemon check jar
+          New-Item -ItemType Directory -Force ../../apps/host-windows/src-tauri/bundled | Out-Null
+          Copy-Item build/libs/badgerbots-paper-plugin.jar ../../apps/host-windows/src-tauri/bundled/badgerbots-paper-plugin.jar
 
       - name: Test native Host core
         run: cargo test --manifest-path apps/host-windows/src-tauri/Cargo.toml --locked
