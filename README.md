@@ -21,9 +21,10 @@ Checkpoint 14 begins release productization: the native Windows Host now owns in
 location selection, secure pairing, current-user protected credential storage, and hardware
 probing inside its graphical wizard. The current Checkpoint 15 slices add managed server
 configuration, pinned Paper/plugin verification, configuration recovery evidence, and scoped
-Private-network firewall approval. Host 0.5.0 also runs a real bounded Paper/plugin/bridge
-readiness test and clean shutdown without opening a command window; permanent camp lifecycle
-controls remain next. See the
+Private-network firewall approval. Host 0.6.0 also runs a real bounded Paper/plugin/bridge
+readiness test and now owns permanent Start/Stop/Recover lifecycle controls, conditional Windows
+sleep prevention, clean close handling, and a realtime redacted Paper console without opening a
+command window. Verified backup/restore, managed Java, and installer repair remain open. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
 and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been

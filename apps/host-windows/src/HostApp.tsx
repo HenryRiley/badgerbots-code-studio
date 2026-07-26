@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   canStartServer,
   hostErrorMessage,
@@ -25,6 +26,7 @@ export function HostApp() {
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState("Loading protected Host state…");
   const [busy, setBusy] = useState(false);
+  const consoleRef = useRef<HTMLPreElement>(null);
   const gate = useMemo(() => (snapshot ? canStartServer(snapshot) : undefined), [snapshot]);
 
   async function refresh() {
@@ -41,6 +43,29 @@ export function HostApp() {
       setError(hostErrorMessage(reason, "Host state could not be loaded."));
     });
   }, []);
+
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return;
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    void listen("host-server-update", () => {
+      void gateway.load().then((next) => {
+        if (!disposed) setSnapshot(next);
+      });
+    }).then((nextUnlisten) => {
+      if (disposed) nextUnlisten();
+      else unlisten = nextUnlisten;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const consoleElement = consoleRef.current;
+    if (consoleElement) consoleElement.scrollTop = consoleElement.scrollHeight;
+  }, [snapshot?.serverLogs.length]);
 
   async function perform(work: () => Promise<string>) {
     setBusy(true);
@@ -90,7 +115,7 @@ export function HostApp() {
         </strong>
         <span>
           {snapshot.mode === "native"
-            ? "Cloud sign-in and Host pairing are real. Server controls unlock only after the remaining artifact, readiness, firewall, and recovery work is verified."
+            ? "Cloud pairing and managed Paper controls are real. Server output stays in the live redacted console below."
             : "This preview exercises the wizard without contacting Supabase or storing credentials."}
         </span>
       </section>
@@ -160,9 +185,57 @@ export function HostApp() {
               </p>
             </div>
           </div>
-          <button type="button" className="locked-button" disabled title={gate?.reasons.join(" ")}>
-            Camp server controls — next slice
-          </button>
+          {snapshot.server.lifecycle === "stopped" ? (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy || !gate?.allowed}
+              title={gate?.reasons.join(" ")}
+              onClick={() =>
+                void perform(async () => {
+                  setSnapshot(await gateway.startServer());
+                  return "Starting Paper. Live readiness will appear below.";
+                })
+              }
+            >
+              Start classroom server
+            </button>
+          ) : null}
+          {snapshot.server.lifecycle === "starting" || snapshot.server.lifecycle === "running" ? (
+            <button
+              type="button"
+              className="danger-button"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  setSnapshot(await gateway.stopServer());
+                  return "Clean Paper shutdown requested.";
+                })
+              }
+            >
+              {snapshot.server.lifecycle === "starting" ? "Cancel startup" : "Stop server"}
+            </button>
+          ) : null}
+          {snapshot.server.lifecycle === "stopping" ? (
+            <button type="button" className="locked-button" disabled>
+              Stopping safely…
+            </button>
+          ) : null}
+          {snapshot.server.lifecycle === "failed" ? (
+            <button
+              type="button"
+              className="primary-button"
+              disabled={busy}
+              onClick={() =>
+                void perform(async () => {
+                  setSnapshot(await gateway.recoverServer());
+                  return "Server recovery checks passed. Start is available again.";
+                })
+              }
+            >
+              Verify and recover
+            </button>
+          ) : null}
           <ul className="gate-list">
             {(gate?.reasons ?? []).slice(0, 3).map((reason) => (
               <li key={reason}>{reason}</li>
@@ -312,9 +385,23 @@ export function HostApp() {
             <p className="eyebrow">Built-in server console</p>
             <h2>Paper readiness log</h2>
           </div>
-          <span>{snapshot.serverLogs.length} lines</span>
+          <span
+            className={`console-live-status ${
+              snapshot.server.lifecycle === "running" ||
+              snapshot.server.lifecycle === "starting" ||
+              snapshot.server.lifecycle === "stopping"
+                ? "live"
+                : ""
+            }`}
+          >
+            {snapshot.server.lifecycle === "running" ||
+            snapshot.server.lifecycle === "starting" ||
+            snapshot.server.lifecycle === "stopping"
+              ? "● LIVE"
+              : `${snapshot.serverLogs.length} lines`}
+          </span>
         </div>
-        <pre aria-label="Redacted Paper server output">
+        <pre ref={consoleRef} aria-live="polite" aria-label="Live redacted Paper server output">
           {snapshot.serverLogs.length
             ? snapshot.serverLogs.join("\n")
             : "The graphical server test has not run yet."}

@@ -4,16 +4,19 @@ use std::{
     path::{Path, PathBuf},
     sync::Mutex,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod firewall;
 mod onboarding;
+mod power;
 mod runtime;
+mod server_manager;
 mod server_test;
 
 use firewall::approve_private_minecraft_port;
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
 use runtime::RuntimeStore;
+use server_manager::{ServerManager, SupervisorEvent};
 use server_test::run as run_server_test;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,11 +110,27 @@ struct HostStore {
 
 impl HostStore {
     fn load(path: PathBuf) -> Self {
-        let snapshot = fs::read_to_string(&path)
+        let mut snapshot = fs::read_to_string(&path)
             .ok()
             .and_then(|contents| serde_json::from_str(&contents).ok())
             .filter(|snapshot: &HostSnapshot| snapshot.schema_version == 1)
             .unwrap_or_else(initial_snapshot);
+        if matches!(
+            snapshot.server.lifecycle.as_str(),
+            "starting" | "running" | "stopping"
+        ) {
+            snapshot.server.lifecycle = "failed".to_string();
+            snapshot.server.active_camp = false;
+            snapshot.server.sleep_inhibition = "inactive".to_string();
+            snapshot.server.last_exit = "unclean".to_string();
+            snapshot.server.recovery_required = true;
+            push_diagnostic(
+                &mut snapshot,
+                "SERVER_RECOVERY_REQUIRED",
+                "Host reopened after an incomplete server lifecycle. Review recovery before restarting.",
+                "warning",
+            );
+        }
         Self {
             path,
             snapshot: Mutex::new(snapshot),
@@ -120,6 +139,61 @@ impl HostStore {
 
     fn persist(&self, snapshot: &HostSnapshot) -> Result<(), String> {
         persist_atomic(&self.path, snapshot)
+    }
+}
+
+pub(crate) fn handle_supervisor_event(app: &tauri::AppHandle, event: SupervisorEvent) {
+    let store = app.state::<HostStore>();
+    if let Ok(mut snapshot) = store.snapshot.lock() {
+        let persist = apply_supervisor_event(&mut snapshot, event);
+        if persist {
+            let _ = store.persist(&snapshot);
+        }
+    }
+    let _ = app.emit("host-server-update", ());
+}
+
+fn apply_supervisor_event(snapshot: &mut HostSnapshot, event: SupervisorEvent) -> bool {
+    match event {
+        SupervisorEvent::Log(line) => {
+            snapshot.server_logs.push(line);
+            if snapshot.server_logs.len() > 80 {
+                snapshot.server_logs.remove(0);
+            }
+            false
+        }
+        SupervisorEvent::Ready => {
+            snapshot.server.lifecycle = "running".to_string();
+            snapshot.server.active_camp = true;
+            snapshot.server.sleep_inhibition = "active".to_string();
+            push_diagnostic(
+                snapshot,
+                "SERVER_RUNNING",
+                "Paper, Sheep City, the authenticated bridge, and the Minecraft listener are ready.",
+                "info",
+            );
+            true
+        }
+        SupervisorEvent::Exited {
+            clean,
+            expected,
+            message,
+        } => {
+            snapshot.server.active_camp = false;
+            snapshot.server.sleep_inhibition = "inactive".to_string();
+            if clean && expected {
+                snapshot.server.lifecycle = "stopped".to_string();
+                snapshot.server.last_exit = "clean".to_string();
+                snapshot.server.recovery_required = false;
+                push_diagnostic(snapshot, "SERVER_STOPPED", &message, "info");
+            } else {
+                snapshot.server.lifecycle = "failed".to_string();
+                snapshot.server.last_exit = "unclean".to_string();
+                snapshot.server.recovery_required = true;
+                push_diagnostic(snapshot, "SERVER_UNCLEAN_EXIT", &message, "error");
+            }
+            true
+        }
     }
 }
 
@@ -591,6 +665,182 @@ async fn test_minecraft_server(
     }
 }
 
+#[tauri::command]
+async fn start_minecraft_server(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    if manager.is_active() {
+        return Err("The managed Minecraft server is already active.".to_string());
+    }
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        let mut blockers = Vec::new();
+        if snapshot
+            .setup_steps
+            .iter()
+            .any(|step| step.status != "complete")
+        {
+            blockers.push("Complete all seven setup gates.");
+        }
+        if snapshot
+            .readiness
+            .iter()
+            .any(|check| check.status == "pending" || check.status == "blocked")
+        {
+            blockers.push("Resolve blocked or pending readiness checks.");
+        }
+        if snapshot
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.status != "verified")
+        {
+            blockers.push("Verify all managed server artifacts.");
+        }
+        if snapshot.backup.status != "verified" {
+            blockers.push("Verify the recovery copy.");
+        }
+        if snapshot.server.recovery_required {
+            blockers.push("Complete crash recovery.");
+        }
+        if snapshot.server.lifecycle != "stopped" {
+            blockers.push("Wait for the current server lifecycle to finish.");
+        }
+        if !blockers.is_empty() {
+            return Err(blockers.join(" "));
+        }
+    }
+
+    let prepared = runtime.prepare_artifacts().await?;
+    let launch = runtime.verified_server_launch()?;
+    {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        apply_prepared_artifacts(&mut snapshot, &prepared);
+        snapshot.server.lifecycle = "starting".to_string();
+        snapshot.server.active_camp = false;
+        snapshot.server.sleep_inhibition = "requested".to_string();
+        snapshot.server.last_exit = "unknown".to_string();
+        snapshot.server_logs = vec!["[Host] Starting the managed classroom server…".to_string()];
+        push_diagnostic(
+            &mut snapshot,
+            "SERVER_START_REQUESTED",
+            "The instructor requested a managed classroom server start.",
+            "info",
+        );
+        host.persist(&snapshot)?;
+    }
+    if let Err(message) = manager.start(launch, app) {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        snapshot.server.lifecycle = "failed".to_string();
+        snapshot.server.sleep_inhibition = "inactive".to_string();
+        snapshot.server.last_exit = "unclean".to_string();
+        snapshot.server.recovery_required = true;
+        push_diagnostic(&mut snapshot, "SERVER_START_FAILED", &message, "error");
+        host.persist(&snapshot)?;
+        return Err(message);
+    }
+    host_snapshot(host)
+}
+
+#[tauri::command]
+fn stop_minecraft_server(
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        if !matches!(snapshot.server.lifecycle.as_str(), "starting" | "running") {
+            return Err("The managed Minecraft server is not running.".to_string());
+        }
+        snapshot.server.lifecycle = "stopping".to_string();
+        push_diagnostic(
+            &mut snapshot,
+            "SERVER_STOP_REQUESTED",
+            "The instructor requested a clean Paper shutdown.",
+            "info",
+        );
+        host.persist(&snapshot)?;
+    }
+    manager.request_stop(false)?;
+    host_snapshot(host)
+}
+
+#[tauri::command]
+async fn recover_minecraft_server(
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    if manager.is_active() {
+        return Err("Wait for the existing Paper process to exit before recovery.".to_string());
+    }
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        if !snapshot.server.recovery_required || snapshot.server.lifecycle != "failed" {
+            return Err("Server recovery is not currently required.".to_string());
+        }
+    }
+    let prepared = runtime.prepare_artifacts().await?;
+    runtime.verified_server_launch()?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    apply_prepared_artifacts(&mut snapshot, &prepared);
+    snapshot.server.lifecycle = "stopped".to_string();
+    snapshot.server.active_camp = false;
+    snapshot.server.sleep_inhibition = "inactive".to_string();
+    snapshot.server.recovery_required = false;
+    push_diagnostic(
+        &mut snapshot,
+        "SERVER_RECOVERY_COMPLETED",
+        "Artifacts, safe configuration, and recovery evidence were re-verified.",
+        "info",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+fn apply_prepared_artifacts(snapshot: &mut HostSnapshot, prepared: &runtime::ArtifactPreparation) {
+    for artifact in &mut snapshot.artifacts {
+        match artifact.id.as_str() {
+            "java" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.java_version.clone();
+                artifact.checksum = "system-version-probe".to_string();
+            }
+            "paper" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.paper_version.clone();
+                artifact.checksum = prepared.paper_sha256.clone();
+            }
+            "plugin" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.plugin_version.clone();
+                artifact.checksum = prepared.plugin_sha256.clone();
+            }
+            _ => {}
+        }
+    }
+}
+
 fn upsert_readiness(snapshot: &mut HostSnapshot, check: ReadinessCheck) {
     if let Some(existing) = snapshot
         .readiness
@@ -638,23 +888,6 @@ fn mark_setup_step(store: &HostStore, step_id: &str, detail: &str) -> Result<(),
         "info",
     );
     store.persist(&snapshot)
-}
-
-#[tauri::command]
-fn transition_server(
-    action: String,
-    store: tauri::State<'_, HostStore>,
-) -> Result<HostSnapshot, String> {
-    let mut snapshot = store
-        .snapshot
-        .lock()
-        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
-    let message = format!(
-        "The {action} request is locked until checksummed Java, Paper, plugin, backup, and readiness evidence exist."
-    );
-    push_diagnostic(&mut snapshot, "SERVER_CONTROL_LOCKED", &message, "warning");
-    store.persist(&snapshot)?;
-    Ok(snapshot.clone())
 }
 
 fn initial_snapshot() -> HostSnapshot {
@@ -797,7 +1030,29 @@ pub fn run() {
             app.manage(HostStore::load(state_path));
             app.manage(OnboardingStore::load(&data_directory).map_err(std::io::Error::other)?);
             app.manage(RuntimeStore::new(data_directory.join("minecraft-runtime")));
+            app.manage(ServerManager::new());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let manager = window.state::<ServerManager>();
+                if manager.is_active() {
+                    api.prevent_close();
+                    let store = window.state::<HostStore>();
+                    if let Ok(mut snapshot) = store.snapshot.lock() {
+                        snapshot.server.lifecycle = "stopping".to_string();
+                        push_diagnostic(
+                            &mut snapshot,
+                            "SERVER_APP_CLOSE_STOP",
+                            "Host is stopping Paper before the application closes.",
+                            "info",
+                        );
+                        let _ = store.persist(&snapshot);
+                    }
+                    let _ = manager.request_stop(true);
+                    let _ = window.app_handle().emit("host-server-update", ());
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             host_snapshot,
@@ -812,7 +1067,9 @@ pub fn run() {
             prepare_runtime_artifacts,
             approve_minecraft_firewall,
             test_minecraft_server,
-            transition_server
+            start_minecraft_server,
+            stop_minecraft_server,
+            recover_minecraft_server
         ])
         .run(tauri::generate_context!())
         .expect("BadgerBots Host failed to start");
@@ -843,5 +1100,48 @@ mod tests {
     #[test]
     fn sensitive_native_diagnostic_is_redacted() {
         assert_eq!(sanitize("token=do-not-log-this"), "[redacted-secret]");
+    }
+
+    #[test]
+    fn supervisor_updates_live_state_and_requires_recovery_after_a_crash() {
+        let mut snapshot = initial_snapshot();
+        assert!(apply_supervisor_event(
+            &mut snapshot,
+            SupervisorEvent::Ready
+        ));
+        assert_eq!(snapshot.server.lifecycle, "running");
+        assert!(snapshot.server.active_camp);
+        assert_eq!(snapshot.server.sleep_inhibition, "active");
+        assert!(apply_supervisor_event(
+            &mut snapshot,
+            SupervisorEvent::Exited {
+                clean: false,
+                expected: false,
+                message: "Injected crash.".to_string(),
+            }
+        ));
+        assert_eq!(snapshot.server.lifecycle, "failed");
+        assert!(snapshot.server.recovery_required);
+        assert_eq!(snapshot.server.sleep_inhibition, "inactive");
+    }
+
+    #[test]
+    fn live_console_retains_only_the_newest_eighty_lines() {
+        let mut snapshot = initial_snapshot();
+        for index in 0..100 {
+            assert!(!apply_supervisor_event(
+                &mut snapshot,
+                SupervisorEvent::Log(format!("line-{index}")),
+            ));
+        }
+        assert_eq!(snapshot.server_logs.len(), 80);
+        assert_eq!(
+            snapshot.server_logs.first().map(String::as_str),
+            Some("line-20")
+        );
+        assert_eq!(
+            snapshot.server_logs.last().map(String::as_str),
+            Some("line-99")
+        );
     }
 }

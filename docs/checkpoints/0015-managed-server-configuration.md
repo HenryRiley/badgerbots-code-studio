@@ -1,6 +1,6 @@
 # Checkpoint 15: managed server configuration
 
-Status: graphical configuration, artifacts, firewall, and test-server slices implemented;
+Status: graphical configuration, artifacts, firewall, test-server, and managed-lifecycle slices implemented;
 physical Windows verification remains required
 
 ## Working in the repository
@@ -27,6 +27,15 @@ physical Windows verification remains required
   loopback-port readiness signals.
 - Host automatically sends `stop`, requires a clean exit, and displays a bounded redacted server
   log inside the app. A failed test remains retryable and never completes setup.
+- After setup, **Start classroom server** launches the verified Paper/plugin configuration as a
+  long-running hidden child process. The state becomes Running only after Paper, plugin, bridge,
+  and loopback readiness are all observed.
+- The in-app console receives actual Paper output in real time, auto-scrolls, retains the newest 80
+  redacted lines, and exposes no arbitrary command input.
+- **Stop server** and normal app close request Paper's clean shutdown. A one-minute bound prevents
+  an unresponsive child from hanging the Host forever.
+- Unexpected Paper exit moves Host to Failed and requires **Verify and recover** before restart.
+  Windows sleep prevention is active only while Paper is ready.
 
 ## Automated evidence
 
@@ -35,12 +44,14 @@ physical Windows verification remains required
 - Rust tests cover checksum mismatch, JAR rejection, privileged-port rejection, and exact
   private-network TCP firewall parameters.
 - Rust tests cover required Paper/plugin/bridge readiness signals and server-log redaction.
+- Rust tests cover supervisor state updates, crash recovery requirement, and the 80-line console
+  bound.
 - Host TypeScript, Rust, formatting, lint, and production-build checks remain part of repository
   verification.
 
 ## Manual Windows verification
 
-1. Install BadgerBots Host 0.5.0 over the existing build and launch it from Start.
+1. Install BadgerBots Host 0.6.0 over the existing build and launch it from Start.
 2. Continue the retained setup. At Step 4, enter the exact teacher Minecraft Java username.
 3. Keep port `25565` and `4 GiB` unless the local environment requires another non-privileged port.
 4. Open and accept the Minecraft EULA, then select **Prepare server**.
@@ -65,13 +76,25 @@ physical Windows verification remains required
 15. Close and reopen Host. Confirm all seven setup gates remain complete.
 16. Before camp acceptance, connect one supported student device over the actual private Wi-Fi;
     loopback success alone does not prove LAN/firewall behavior.
+17. Select **Start classroom server**. Confirm the status changes to Starting, live Paper lines
+    appear immediately, and Running appears only after all readiness signals.
+18. Confirm the console shows **LIVE**, continues to update, auto-scrolls, and never displays the
+    bridge credential or full managed-runtime path.
+19. Join Minecraft Java at `127.0.0.1:25565` (or the configured port) and confirm Sheep City loads.
+20. Select **Stop server**. Confirm Stopping then Stopped/clean, with no Command Prompt or Java
+    console window at any point.
+21. Start again, then close Host. Confirm Host waits for Paper's clean shutdown before closing.
+    Reopen it and confirm the last exit is clean rather than requiring recovery.
+22. Start again and end only that Paper `java.exe` child in Task Manager. Confirm Host changes to
+    Failed, reports an unclean exit, blocks Start, and **Verify and recover** returns it to Stopped.
+23. During Running, confirm Windows does not automatically sleep. After Stop, confirm the normal
+    power policy resumes.
 
 ## Not yet claimed
 
-- Host does not yet provide permanent camp Start/Stop, crash recovery, sleep inhibition, a verified
-  world backup/restore flow, or firewall repair/removal.
-- The existing command-line Paper prototype remains separate evidence. This slice does not claim a
-  finished no-terminal installation.
+- Host does not yet provide a verified world backup/restore flow, managed Java distribution,
+  firewall repair/removal, or signed update/repair behavior.
+- Hard-killing Host itself or losing power still requires a physical orphan-process and world
+  integrity drill.
 - The Java 21 runtime is version-probed but not yet a privately managed checksummed distribution.
-- Checkpoint 15 continues with permanent server lifecycle, world backup/recovery, managed Java, and
-  repair/uninstall behavior.
+- Checkpoint 15 continues with world backup/recovery, managed Java, and repair/uninstall behavior.

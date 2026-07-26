@@ -88,6 +88,13 @@ plugin into the installer. Physical Windows evidence must run the graphical Test
 confirm the built-in bounded log, loopback listener, clean shutdown, persistence, and absence of a
 Java/Command Prompt window. Loopback evidence does not replace a student-device test on camp Wi-Fi.
 
+Host 0.6.0 adds native supervisor tests for live readiness/crash state and bounded console
+retention. TypeScript tests and compilation cover the graphical lifecycle contract. Physical
+Windows evidence must prove that Start streams real Paper lines while the UI remains responsive,
+Running is not shown before all readiness signals, Stop exits cleanly, normal Host close waits for
+Paper, unexpected child exit requires recovery, sleep policy is restored, and neither Java nor a
+Command Prompt window becomes visible.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.
