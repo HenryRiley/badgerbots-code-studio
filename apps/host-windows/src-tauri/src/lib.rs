@@ -9,10 +9,12 @@ use tauri::Manager;
 mod firewall;
 mod onboarding;
 mod runtime;
+mod server_test;
 
 use firewall::approve_private_minecraft_port;
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
 use runtime::RuntimeStore;
+use server_test::run as run_server_test;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +96,8 @@ struct HostSnapshot {
     update: UpdateState,
     pending_outbound_messages: u32,
     diagnostics: Vec<DiagnosticEvent>,
+    #[serde(default)]
+    server_logs: Vec<String>,
 }
 
 struct HostStore {
@@ -428,6 +432,165 @@ fn approve_minecraft_firewall(
     host_snapshot(host)
 }
 
+#[tauri::command]
+async fn test_minecraft_server(
+    runtime: tauri::State<'_, RuntimeStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        let next_step = snapshot
+            .setup_steps
+            .iter()
+            .find(|step| step.status != "complete")
+            .map(|step| step.id.as_str());
+        if next_step != Some("test_server")
+            || snapshot
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.status != "verified")
+        {
+            return Err(
+                "Complete artifact installation and firewall approval before testing Paper."
+                    .to_string(),
+            );
+        }
+    }
+    let prepared = runtime.prepare_artifacts().await?;
+    let launch = runtime.verified_server_launch()?;
+    {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        for artifact in &mut snapshot.artifacts {
+            match artifact.id.as_str() {
+                "java" => {
+                    artifact.status = "verified".to_string();
+                    artifact.version = prepared.java_version.clone();
+                    artifact.checksum = "system-version-probe".to_string();
+                }
+                "paper" => {
+                    artifact.status = "verified".to_string();
+                    artifact.version = prepared.paper_version.clone();
+                    artifact.checksum = prepared.paper_sha256.clone();
+                }
+                "plugin" => {
+                    artifact.status = "verified".to_string();
+                    artifact.version = prepared.plugin_version.clone();
+                    artifact.checksum = prepared.plugin_sha256.clone();
+                }
+                _ => {}
+            }
+        }
+        snapshot.server.lifecycle = "starting".to_string();
+        snapshot.server.last_exit = "unknown".to_string();
+        snapshot.server.recovery_required = false;
+        snapshot.server_logs = vec!["Starting the managed Paper readiness test…".to_string()];
+        push_diagnostic(
+            &mut snapshot,
+            "SERVER_TEST_STARTED",
+            "The managed Paper readiness test started without opening a command window.",
+            "info",
+        );
+        host.persist(&snapshot)?;
+    }
+
+    let result = match tauri::async_runtime::spawn_blocking(move || run_server_test(launch)).await {
+        Ok(result) => result,
+        Err(_) => {
+            let mut snapshot = host
+                .snapshot
+                .lock()
+                .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+            snapshot.server.lifecycle = "failed".to_string();
+            snapshot.server.last_exit = "unclean".to_string();
+            snapshot.server.recovery_required = false;
+            push_diagnostic(
+                &mut snapshot,
+                "SERVER_TEST_WORKER_FAILED",
+                "The Paper readiness worker stopped unexpectedly.",
+                "error",
+            );
+            host.persist(&snapshot)?;
+            return Err("The Paper readiness worker stopped unexpectedly.".to_string());
+        }
+    };
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    match result {
+        Ok(report) => {
+            snapshot.server.lifecycle = "stopped".to_string();
+            snapshot.server.active_camp = false;
+            snapshot.server.sleep_inhibition = "inactive".to_string();
+            snapshot.server.last_exit = "clean".to_string();
+            snapshot.server.recovery_required = false;
+            snapshot.server_logs = report.logs;
+            if let Some(step) = snapshot
+                .setup_steps
+                .iter_mut()
+                .find(|step| step.id == "test_server")
+            {
+                step.status = "complete".to_string();
+                step.detail =
+                    "Paper, the Sheep City plugin, authenticated bridge, local port, and clean shutdown passed."
+                        .to_string();
+            }
+            upsert_readiness(
+                &mut snapshot,
+                ReadinessCheck {
+                    id: "network".to_string(),
+                    label: "Local Minecraft listener".to_string(),
+                    status: "warning".to_string(),
+                    measured:
+                        "Loopback server test passed; verify one student device on camp Wi-Fi."
+                            .to_string(),
+                    requirement: "Private Wi-Fi and scoped Minecraft port".to_string(),
+                    recovery: Some(
+                        "Run the student-device LAN check before the first camp day.".to_string(),
+                    ),
+                },
+            );
+            snapshot.backup.status = "verified".to_string();
+            snapshot.backup.last_verified_at = Some(format!(
+                "unix-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |duration| duration.as_secs())
+            ));
+            push_diagnostic(
+                &mut snapshot,
+                "SERVER_TEST_PASSED",
+                "Paper, the BadgerBots plugin, authenticated bridge, local listener, and clean shutdown passed.",
+                "info",
+            );
+            host.persist(&snapshot)?;
+            Ok(snapshot.clone())
+        }
+        Err(failure) => {
+            snapshot.server.lifecycle = "failed".to_string();
+            snapshot.server.active_camp = false;
+            snapshot.server.sleep_inhibition = "inactive".to_string();
+            snapshot.server.last_exit = "unclean".to_string();
+            snapshot.server.recovery_required = false;
+            snapshot.server_logs = failure.logs;
+            push_diagnostic(
+                &mut snapshot,
+                "SERVER_TEST_FAILED",
+                &failure.message,
+                "error",
+            );
+            host.persist(&snapshot)?;
+            Err(failure.message)
+        }
+    }
+}
+
 fn upsert_readiness(snapshot: &mut HostSnapshot, check: ReadinessCheck) {
     if let Some(existing) = snapshot
         .readiness
@@ -582,6 +745,7 @@ fn initial_snapshot() -> HostSnapshot {
             message: "Native Host state loaded; infrastructure controls remain locked.".to_string(),
             correlation_id: "host-native-ready".to_string(),
         }],
+        server_logs: Vec::new(),
     }
 }
 
@@ -647,6 +811,7 @@ pub fn run() {
             configure_minecraft_server,
             prepare_runtime_artifacts,
             approve_minecraft_firewall,
+            test_minecraft_server,
             transition_server
         ])
         .run(tauri::generate_context!())

@@ -49,6 +49,7 @@ export function HostApp() {
       setMessage(await work());
     } catch (reason) {
       setError(hostErrorMessage(reason, "Host setup could not continue."));
+      await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -119,6 +120,7 @@ export function HostApp() {
         onServerConfigured={setSnapshot}
         onRuntimePrepared={setSnapshot}
         onFirewallApproved={setSnapshot}
+        onServerTested={setSnapshot}
       />
 
       <section className="hero-grid">
@@ -151,11 +153,15 @@ export function HostApp() {
             <span className={`server-icon ${snapshot.server.lifecycle}`}>◆</span>
             <div>
               <h2>{titleCase(snapshot.server.lifecycle)}</h2>
-              <p>Runtime packaging is the next product slice</p>
+              <p>
+                {snapshot.setupSteps.at(-1)?.status === "complete"
+                  ? "Readiness test stopped cleanly"
+                  : "Waiting for the guided readiness test"}
+              </p>
             </div>
           </div>
           <button type="button" className="locked-button" disabled title={gate?.reasons.join(" ")}>
-            Start server — safety checks incomplete
+            Camp server controls — next slice
           </button>
           <ul className="gate-list">
             {(gate?.reasons ?? []).slice(0, 3).map((reason) => (
@@ -299,6 +305,21 @@ export function HostApp() {
           </ul>
         </article>
       </section>
+
+      <section className="panel server-console-panel">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Built-in server console</p>
+            <h2>Paper readiness log</h2>
+          </div>
+          <span>{snapshot.serverLogs.length} lines</span>
+        </div>
+        <pre aria-label="Redacted Paper server output">
+          {snapshot.serverLogs.length
+            ? snapshot.serverLogs.join("\n")
+            : "The graphical server test has not run yet."}
+        </pre>
+      </section>
     </main>
   );
 }
@@ -316,6 +337,7 @@ function OnboardingWizard(props: {
   onServerConfigured(snapshot: HostSnapshot): void;
   onRuntimePrepared(snapshot: HostSnapshot): void;
   onFirewallApproved(snapshot: HostSnapshot): void;
+  onServerTested(snapshot: HostSnapshot): void;
 }) {
   const [serviceUrl, setServiceUrl] = useState<string>(
     buildSetting("VITE_BADGERBOTS_SUPABASE_URL"),
@@ -510,6 +532,40 @@ function OnboardingWizard(props: {
             }
           >
             {props.busy ? "Waiting for Windows…" : "Approve private-network access"}
+          </button>
+        </div>
+      </section>
+    );
+
+  if (props.onboarding.paired && nextStep?.id === "test_server")
+    return (
+      <section className="onboarding-card">
+        <div className="wizard-heading">
+          <span>7</span>
+          <div>
+            <p className="eyebrow">Paper readiness</p>
+            <h2>Test the classroom server</h2>
+            <p>
+              Host will start Paper without a command window, verify the Sheep City plugin,
+              authenticated local bridge, and Minecraft listener, then issue a clean shutdown. First
+              launch can take up to three minutes.
+            </p>
+          </div>
+        </div>
+        <div className="wizard-action">
+          <span className="secure-chip">Logs stay inside BadgerBots Host</span>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={props.busy}
+            onClick={() =>
+              void props.perform(async () => {
+                props.onServerTested(await gateway.testServer());
+                return "Paper readiness passed and the test server stopped cleanly.";
+              })
+            }
+          >
+            {props.busy ? "Starting, checking, and stopping Paper…" : "Run server test"}
           </button>
         </div>
       </section>

@@ -10,7 +10,7 @@ use std::{
 const PAPER_URL: &str = "https://fill-data.papermc.io/v1/objects/5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba/paper-1.21.11-132.jar";
 pub const PAPER_SHA256: &str = "5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba";
 const PAPER_VERSION: &str = "Paper 1.21.11 build 132";
-const PLUGIN_VERSION: &str = "BadgerBots Paper plugin 0.4.0-prototype";
+const PLUGIN_VERSION: &str = "BadgerBots Paper plugin 0.5.0-prototype";
 const MAX_PAPER_BYTES: u64 = 80 * 1024 * 1024;
 const EMBEDDED_PLUGIN: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/badgerbots-paper-plugin.jar"));
@@ -26,7 +26,7 @@ pub struct RuntimeConfiguration {
     pub eula_accepted: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactPreparation {
     pub java_version: String,
@@ -36,6 +36,15 @@ pub struct ArtifactPreparation {
     pub plugin_sha256: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerLaunch {
+    pub runtime_directory: PathBuf,
+    pub paper_path: PathBuf,
+    pub bridge_directory: PathBuf,
+    pub configuration: RuntimeConfiguration,
+}
+
+#[derive(Clone)]
 pub struct RuntimeStore {
     directory: PathBuf,
 }
@@ -93,7 +102,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.4.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.5.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
@@ -158,9 +167,96 @@ impl RuntimeStore {
     pub fn configuration(&self) -> Result<RuntimeConfiguration, String> {
         let contents = fs::read_to_string(self.directory.join("badgerbots-runtime.json"))
             .map_err(|_| "The managed server configuration could not be loaded.".to_string())?;
-        serde_json::from_str(&contents).map_err(|_| {
-            "The managed server configuration is invalid. Prepare it again.".to_string()
+        let configuration: RuntimeConfiguration =
+            serde_json::from_str(&contents).map_err(|_| {
+                "The managed server configuration is invalid. Prepare it again.".to_string()
+            })?;
+        validate_configuration(
+            &configuration.teacher_username,
+            configuration.server_port,
+            configuration.max_heap_gib,
+            configuration.eula_accepted,
+        )?;
+        Ok(configuration)
+    }
+
+    pub fn verified_server_launch(&self) -> Result<ServerLaunch, String> {
+        let configuration = self.configuration()?;
+        persist_text_atomic(&self.directory.join("eula.txt"), "eula=true\n")?;
+        persist_text_atomic(
+            &self.directory.join("server.properties"),
+            &server_properties(&configuration),
+        )?;
+        let artifact_contents =
+            fs::read_to_string(self.directory.join("badgerbots-artifacts.json")).map_err(|_| {
+                "Install and verify the server files before testing Paper.".to_string()
+            })?;
+        let artifacts: ArtifactPreparation =
+            serde_json::from_str(&artifact_contents).map_err(|_| {
+                "The installed server artifact record is invalid. Reinstall the server files."
+                    .to_string()
+            })?;
+        let paper_path = self.directory.join("paper-1.21.11-132.jar");
+        if checksum_file(&paper_path).as_deref() != Some(PAPER_SHA256) {
+            return Err(
+                "Paper no longer matches its approved checksum. Reinstall the server files."
+                    .to_string(),
+            );
+        }
+        let plugin_path = self
+            .directory
+            .join("plugins")
+            .join("badgerbots-paper-plugin.jar");
+        if checksum_file(&plugin_path).as_deref() != Some(artifacts.plugin_sha256.as_str()) {
+            return Err(
+                "The BadgerBots plugin no longer matches its installed checksum. Reinstall the server files."
+                    .to_string(),
+            );
+        }
+        self.verify_configuration_backup()?;
+        Ok(ServerLaunch {
+            runtime_directory: self.directory.clone(),
+            paper_path,
+            bridge_directory: self.directory.join("bridge"),
+            configuration,
         })
+    }
+
+    fn verify_configuration_backup(&self) -> Result<(), String> {
+        let backup_directory = self.directory.join("backups").join("initial-configuration");
+        let evidence_contents = fs::read_to_string(backup_directory.join("verification.json"))
+            .map_err(|_| {
+                "The initial configuration recovery evidence is missing. Reinstall the server files before testing Paper."
+                    .to_string()
+            })?;
+        let evidence: serde_json::Value = serde_json::from_str(&evidence_contents).map_err(|_| {
+            "The initial configuration recovery evidence is invalid. Reinstall the server files before testing Paper."
+                .to_string()
+        })?;
+        let files = evidence
+            .get("files")
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| {
+                "The initial configuration recovery evidence is incomplete. Reinstall the server files before testing Paper."
+                    .to_string()
+            })?;
+        for name in [
+            "eula.txt",
+            "server.properties",
+            "badgerbots-runtime.json",
+            "badgerbots-artifacts.json",
+        ] {
+            let expected = files.get(name).and_then(serde_json::Value::as_str);
+            if expected.is_none()
+                || checksum_file(&backup_directory.join(name)).as_deref() != expected
+            {
+                return Err(
+                    "The initial configuration recovery copy could not be verified. Reinstall the server files before testing Paper."
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
     }
 
     fn create_configuration_backup(&self, artifacts: &ArtifactPreparation) -> Result<(), String> {
@@ -179,10 +275,16 @@ impl RuntimeStore {
             persist_bytes_atomic(&backup_directory.join(name), &bytes)?;
         }
         let evidence = serde_json::json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "kind": "configuration-only",
             "paperSha256": artifacts.paper_sha256,
             "pluginSha256": artifacts.plugin_sha256,
+            "files": {
+                "eula.txt": checksum_file(&backup_directory.join("eula.txt")),
+                "server.properties": checksum_file(&backup_directory.join("server.properties")),
+                "badgerbots-runtime.json": checksum_file(&backup_directory.join("badgerbots-runtime.json")),
+                "badgerbots-artifacts.json": checksum_file(&backup_directory.join("badgerbots-artifacts.json")),
+            },
         });
         persist_text_atomic(
             &backup_directory.join("verification.json"),
@@ -394,5 +496,44 @@ mod tests {
             validate_jar(EMBEDDED_PLUGIN, "BadgerBots plugin")
                 .expect("the packaged plugin must be a valid JAR");
         }
+    }
+
+    #[test]
+    fn rejects_a_changed_configuration_recovery_copy() {
+        let directory = std::env::temp_dir().join(format!(
+            "badgerbots-runtime-backup-test-{}",
+            std::process::id()
+        ));
+        let backup = directory.join("backups").join("initial-configuration");
+        fs::create_dir_all(&backup).expect("test backup directory should be created");
+        for name in [
+            "eula.txt",
+            "server.properties",
+            "badgerbots-runtime.json",
+            "badgerbots-artifacts.json",
+        ] {
+            fs::write(directory.join(name), b"verified")
+                .expect("current test file should be written");
+            fs::write(backup.join(name), b"verified").expect("backup test file should be written");
+        }
+        let evidence = serde_json::json!({
+            "files": {
+                "eula.txt": checksum_file(&backup.join("eula.txt")),
+                "server.properties": checksum_file(&backup.join("server.properties")),
+                "badgerbots-runtime.json": checksum_file(&backup.join("badgerbots-runtime.json")),
+                "badgerbots-artifacts.json": checksum_file(&backup.join("badgerbots-artifacts.json")),
+            }
+        });
+        fs::write(
+            backup.join("verification.json"),
+            serde_json::to_vec(&evidence).expect("test evidence should serialize"),
+        )
+        .expect("backup evidence should be written");
+        let store = RuntimeStore::new(directory.clone());
+        assert!(store.verify_configuration_backup().is_ok());
+        fs::write(backup.join("server.properties"), b"changed")
+            .expect("backup mismatch should be written");
+        assert!(store.verify_configuration_backup().is_err());
+        fs::remove_dir_all(directory).expect("test directory should be removed");
     }
 }

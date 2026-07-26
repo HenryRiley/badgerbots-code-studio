@@ -32,6 +32,7 @@ export interface HostGateway {
   configureServer(input: ServerConfigurationInput): Promise<HostSnapshot>;
   prepareRuntimeArtifacts(): Promise<HostSnapshot>;
   approveFirewall(): Promise<HostSnapshot>;
+  testServer(): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
   transition(
     action: "start" | "mark_running" | "stop" | "mark_stopped" | "crash",
@@ -156,6 +157,39 @@ export function createHostGateway(): HostGateway {
       );
       return Promise.resolve(structuredClone(snapshot));
     },
+    testServer: () => {
+      snapshot = {
+        ...snapshot,
+        readiness: snapshot.readiness.map((check) =>
+          check.id === "network"
+            ? {
+                ...check,
+                status: "warning",
+                measured: "Preview loopback test passed; camp Wi-Fi test remains.",
+              }
+            : check,
+        ),
+        backup: { status: "verified", lastVerifiedAt: new Date().toISOString() },
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          lastExit: "clean",
+          recoveryRequired: false,
+        },
+        serverLogs: [
+          "[Paper] BadgerBots Sheep City runtime loaded.",
+          "[Paper] Authenticated BadgerBots Host bridge is ready.",
+          '[Paper] Done (preview)! For help, type "help"',
+          "[Paper] Stopping server",
+        ],
+      };
+      snapshot = completeSetupStep(
+        snapshot,
+        "test_server",
+        "Preview Paper readiness and clean shutdown passed.",
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
     completeStep: (stepId, detail) => {
       snapshot = completeSetupStep(snapshot, stepId, detail);
       return Promise.resolve(structuredClone(snapshot));
@@ -194,6 +228,7 @@ const nativeGateway: HostGateway = {
     }),
   prepareRuntimeArtifacts: () => invoke<HostSnapshot>("prepare_runtime_artifacts"),
   approveFirewall: () => invoke<HostSnapshot>("approve_minecraft_firewall"),
+  testServer: () => invoke<HostSnapshot>("test_minecraft_server"),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
   transition: (action) => invoke<HostSnapshot>("transition_server", { action }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),
