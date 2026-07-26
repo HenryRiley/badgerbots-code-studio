@@ -193,6 +193,9 @@ h2 {
 .wizard-form.pair-form {
   grid-template-columns: 1fr 1fr 1.2fr auto;
 }
+.wizard-form.runtime-form {
+  grid-template-columns: 1.25fr 0.7fr 0.9fr 1.5fr auto;
+}
 .wizard-form label {
   display: grid;
   gap: 6px;
@@ -218,6 +221,26 @@ h2 {
 .wizard-form select:focus {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px #1c6b9119;
+}
+.wizard-form .checkbox-field {
+  display: flex;
+  min-height: 41px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+.wizard-form .checkbox-field input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+.checkbox-field a {
+  color: var(--blue);
+}
+.next-step-note {
+  margin-top: 8px;
+  color: #526f7e;
+  font-size: 12px;
 }
 .secure-chip {
   padding: 8px 11px;
@@ -566,7 +589,8 @@ h2 {
   }
   .wizard-form,
   .wizard-form.service-form,
-  .wizard-form.pair-form {
+  .wizard-form.pair-form,
+  .wizard-form.runtime-form {
     grid-template-columns: 1fr 1fr;
   }
   .hero-grid,
@@ -597,6 +621,7 @@ h2 {
   .wizard-form,
   .wizard-form.service-form,
   .wizard-form.pair-form,
+  .wizard-form.runtime-form,
   .bottom-grid {
     grid-template-columns: 1fr;
   }

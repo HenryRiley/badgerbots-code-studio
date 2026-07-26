@@ -6,6 +6,7 @@ import {
   type HostSnapshot,
   type InstructorProfile,
   validateHostServiceInput,
+  validateServerConfiguration,
 } from "./domain.js";
 import { createHostGateway } from "./gateway.js";
 
@@ -100,6 +101,7 @@ export function HostApp() {
 
       <OnboardingWizard
         onboarding={onboarding}
+        snapshot={snapshot}
         {...(profile ? { profile } : {})}
         busy={busy}
         perform={perform}
@@ -114,6 +116,7 @@ export function HostApp() {
           void gateway.load().then(setSnapshot);
         }}
         onHardwareProbed={setSnapshot}
+        onServerConfigured={setSnapshot}
       />
 
       <section className="hero-grid">
@@ -293,6 +296,7 @@ export function HostApp() {
 
 function OnboardingWizard(props: {
   onboarding: HostOnboardingView;
+  snapshot: HostSnapshot;
   profile?: InstructorProfile;
   busy: boolean;
   perform(work: () => Promise<string>): Promise<void>;
@@ -300,6 +304,7 @@ function OnboardingWizard(props: {
   onSignedIn(result: { onboarding: HostOnboardingView; profile: InstructorProfile }): void;
   onPaired(view: HostOnboardingView): void;
   onHardwareProbed(snapshot: HostSnapshot): void;
+  onServerConfigured(snapshot: HostSnapshot): void;
 }) {
   const [serviceUrl, setServiceUrl] = useState<string>(
     buildSetting("VITE_BADGERBOTS_SUPABASE_URL"),
@@ -312,6 +317,10 @@ function OnboardingWizard(props: {
   const [organizationId, setOrganizationId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [displayName, setDisplayName] = useState("BadgerBots Teacher Laptop");
+  const [teacherUsername, setTeacherUsername] = useState("");
+  const [serverPort, setServerPort] = useState(25565);
+  const [maxHeapGib, setMaxHeapGib] = useState(4);
+  const [eulaAccepted, setEulaAccepted] = useState(false);
 
   const ownerOrganizationIds = new Set(
     props.profile?.memberships
@@ -333,6 +342,98 @@ function OnboardingWizard(props: {
     }
   }, [locationId, locations]);
 
+  const nextStep = props.snapshot.setupSteps.find((step) => step.status !== "complete");
+
+  if (props.onboarding.paired && nextStep?.id === "server_configuration")
+    return (
+      <section className="onboarding-card">
+        <div className="wizard-heading">
+          <span>4</span>
+          <div>
+            <p className="eyebrow">Minecraft server</p>
+            <h2>Prepare the private classroom server</h2>
+            <p>
+              Host will create the managed server folder and safe configuration. It checks Java 21
+              without opening a command window.
+            </p>
+          </div>
+        </div>
+        <form
+          className="wizard-form runtime-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void props.perform(async () => {
+              const input = {
+                teacherUsername: teacherUsername.trim(),
+                serverPort,
+                maxHeapGib,
+                eulaAccepted,
+              };
+              const validationErrors = validateServerConfiguration(input);
+              if (validationErrors[0]) throw new Error(validationErrors.join(" "));
+              const next = await gateway.configureServer(input);
+              props.onServerConfigured(next);
+              return "Private server settings and teacher Minecraft mapping were saved.";
+            });
+          }}
+        >
+          <label>
+            Teacher Minecraft username
+            <input
+              required
+              minLength={3}
+              maxLength={16}
+              pattern="[A-Za-z0-9_]{3,16}"
+              placeholder="TeacherPlayer"
+              value={teacherUsername}
+              onChange={(event) => setTeacherUsername(event.target.value)}
+            />
+          </label>
+          <label>
+            Minecraft port
+            <input
+              required
+              type="number"
+              min={1024}
+              max={65535}
+              value={serverPort}
+              onChange={(event) => setServerPort(event.target.valueAsNumber)}
+            />
+          </label>
+          <label>
+            Server memory
+            <select
+              value={maxHeapGib}
+              onChange={(event) => setMaxHeapGib(Number(event.target.value))}
+            >
+              <option value={2}>2 GiB</option>
+              <option value={4}>4 GiB (recommended)</option>
+              <option value={6}>6 GiB</option>
+              <option value={8}>8 GiB</option>
+            </select>
+          </label>
+          <label className="checkbox-field">
+            <input
+              required
+              type="checkbox"
+              checked={eulaAccepted}
+              onChange={(event) => setEulaAccepted(event.target.checked)}
+            />
+            <span>
+              I have read and accept the{" "}
+              <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer">
+                Minecraft EULA
+              </a>
+              .
+            </span>
+          </label>
+          <button className="primary-button" disabled={props.busy || !eulaAccepted}>
+            Prepare server
+          </button>
+        </form>
+      </section>
+    );
+
   if (props.onboarding.paired)
     return (
       <section className="onboarding-card complete-card">
@@ -342,6 +443,12 @@ function OnboardingWizard(props: {
           <p>
             {props.onboarding.organizationName} · {props.onboarding.locationName}
           </p>
+          {nextStep ? (
+            <p className="next-step-note">
+              Next: {nextStep.label}. Host will unlock each control only when its native
+              implementation is available.
+            </p>
+          ) : null}
         </div>
         <div className="button-row">
           <button

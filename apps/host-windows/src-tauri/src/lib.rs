@@ -7,8 +7,10 @@ use std::{
 use tauri::Manager;
 
 mod onboarding;
+mod runtime;
 
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
+use runtime::RuntimeStore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -286,6 +288,51 @@ fn probe_host_hardware(store: tauri::State<'_, HostStore>) -> Result<HostSnapsho
     Ok(snapshot.clone())
 }
 
+#[tauri::command]
+fn configure_minecraft_server(
+    teacher_username: String,
+    server_port: u16,
+    max_heap_gib: u8,
+    eula_accepted: bool,
+    runtime: tauri::State<'_, RuntimeStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        let next_step = snapshot
+            .setup_steps
+            .iter()
+            .find(|step| step.status != "complete")
+            .map(|step| step.id.as_str());
+        if next_step != Some("server_configuration") {
+            return Err("Complete pairing and the laptop readiness check first.".to_string());
+        }
+    }
+    let configuration = runtime.configure(
+        teacher_username.clone(),
+        server_port,
+        max_heap_gib,
+        eula_accepted,
+    )?;
+    mark_setup_step(
+        &host,
+        "server_configuration",
+        &format!(
+            "Private Paper configuration saved on port {} with a {} GiB limit; {} detected.",
+            configuration.server_port, configuration.max_heap_gib, configuration.java_version
+        ),
+    )?;
+    mark_setup_step(
+        &host,
+        "teacher_minecraft_mapping",
+        &format!("Teacher Minecraft username: {teacher_username}"),
+    )?;
+    host_snapshot(host)
+}
+
 fn upsert_readiness(snapshot: &mut HostSnapshot, check: ReadinessCheck) {
     if let Some(existing) = snapshot
         .readiness
@@ -490,6 +537,7 @@ pub fn run() {
             let state_path = data_directory.join("host-state.json");
             app.manage(HostStore::load(state_path));
             app.manage(OnboardingStore::load(&data_directory).map_err(std::io::Error::other)?);
+            app.manage(RuntimeStore::new(data_directory.join("minecraft-runtime")));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -501,6 +549,7 @@ pub fn run() {
             pair_classroom_host,
             sign_out_instructor,
             probe_host_hardware,
+            configure_minecraft_server,
             transition_server
         ])
         .run(tauri::generate_context!())

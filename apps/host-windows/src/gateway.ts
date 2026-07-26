@@ -6,6 +6,7 @@ import {
   type HostOnboardingView,
   type HostSnapshot,
   type InstructorProfile,
+  type ServerConfigurationInput,
   type SignInResult,
   type SetupStepId,
 } from "./domain.js";
@@ -28,6 +29,7 @@ export interface HostGateway {
   ): Promise<HostOnboardingView>;
   signOut(): Promise<HostOnboardingView>;
   probeHardware(): Promise<HostSnapshot>;
+  configureServer(input: ServerConfigurationInput): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
   transition(
     action: "start" | "mark_running" | "stop" | "mark_stopped" | "crash",
@@ -107,6 +109,24 @@ export function createHostGateway(): HostGateway {
             : check,
         ),
       };
+      snapshot = completeSetupStep(
+        snapshot,
+        "hardware_readiness",
+        "Browser preview of native readiness evidence.",
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    configureServer: (input) => {
+      snapshot = completeSetupStep(
+        snapshot,
+        "server_configuration",
+        `Private server on port ${input.serverPort} with a ${input.maxHeapGib} GiB limit.`,
+      );
+      snapshot = completeSetupStep(
+        snapshot,
+        "teacher_minecraft_mapping",
+        `Teacher Minecraft username: ${input.teacherUsername}`,
+      );
       return Promise.resolve(structuredClone(snapshot));
     },
     completeStep: (stepId, detail) => {
@@ -138,6 +158,13 @@ const nativeGateway: HostGateway = {
     }),
   signOut: () => invoke<HostOnboardingView>("sign_out_instructor"),
   probeHardware: () => invoke<HostSnapshot>("probe_host_hardware"),
+  configureServer: (input) =>
+    invoke<HostSnapshot>("configure_minecraft_server", {
+      teacherUsername: input.teacherUsername,
+      serverPort: input.serverPort,
+      maxHeapGib: input.maxHeapGib,
+      eulaAccepted: input.eulaAccepted,
+    }),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
   transition: (action) => invoke<HostSnapshot>("transition_server", { action }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),
