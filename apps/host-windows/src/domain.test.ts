@@ -4,8 +4,10 @@ import {
   canStartServer,
   completeSetupStep,
   createInitialHostSnapshot,
+  hostErrorMessage,
   requestServerTransition,
   sanitizeDiagnosticText,
+  validateHostServiceInput,
   type HostSnapshot,
 } from "./domain.js";
 
@@ -94,5 +96,33 @@ describe("Host setup and server safety model", () => {
         "teacher@example.com token=abcdef password=hunter2 authorization:BearerSecretValue",
       ),
     ).toBe("[redacted-email] [redacted-secret] [redacted-secret] [redacted-secret]");
+  });
+
+  it("accepts only the public Supabase onboarding boundary", () => {
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "https://camp-project.supabase.co",
+        publishableKey: "sb_publishable_example-key-long-enough",
+      }),
+    ).toEqual([]);
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "http://camp-project.supabase.co/rest/v1",
+        publishableKey: "sb_secret_never-place-this-in-the-host-form",
+      }),
+    ).toEqual([
+      "Use the bare HTTPS Supabase Project URL.",
+      "Use the browser-safe Supabase Publishable key.",
+    ]);
+  });
+
+  it("preserves actionable native command errors", () => {
+    expect(hostErrorMessage("Instructor sign-in failed.", "Fallback")).toBe(
+      "Instructor sign-in failed.",
+    );
+    expect(hostErrorMessage(new Error("Network unavailable."), "Fallback")).toBe(
+      "Network unavailable.",
+    );
+    expect(hostErrorMessage({ message: "untrusted shape" }, "Fallback")).toBe("Fallback");
   });
 });

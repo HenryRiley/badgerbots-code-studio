@@ -72,6 +72,54 @@ export interface HostSnapshot {
   diagnostics: DiagnosticEvent[];
 }
 
+export interface HostOnboardingView {
+  serviceConfigured: boolean;
+  signedIn: boolean;
+  paired: boolean;
+  serviceUrl?: string;
+  instructorEmail?: string;
+  organizationName?: string;
+  locationName?: string;
+  hostId?: string;
+  hostDisplayName?: string;
+  credentialProtection: string;
+}
+
+export interface InstructorProfile {
+  memberships: { organizationId: string; role: "owner" | "assistant" }[];
+  organizations: { id: string; name: string }[];
+  locations: { id: string; organizationId: string; name: string }[];
+}
+
+export interface SignInResult {
+  onboarding: HostOnboardingView;
+  profile: InstructorProfile;
+}
+
+export function validateHostServiceInput(input: {
+  serviceUrl: string;
+  publishableKey: string;
+}): string[] {
+  const errors: string[] = [];
+  try {
+    const url = new URL(input.serviceUrl.trim());
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".supabase.co") ||
+      url.port ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      errors.push("Use the bare HTTPS Supabase Project URL.");
+  } catch {
+    errors.push("Enter a valid HTTPS classroom service URL.");
+  }
+  if (!input.publishableKey.startsWith("sb_publishable_") || input.publishableKey.length < 24)
+    errors.push("Use the browser-safe Supabase Publishable key.");
+  return errors;
+}
+
 const setupLabels: Record<SetupStepId, string> = {
   instructor_sign_in: "Instructor sign-in",
   location: "Camp location",
@@ -259,6 +307,12 @@ export function sanitizeDiagnosticText(value: string): string {
     .replace(/\b(?:token|password|secret|authorization)\s*[:=]\s*\S+/gi, "[redacted-secret]")
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted-credential]")
     .slice(0, 500);
+}
+
+export function hostErrorMessage(reason: unknown, fallback: string): string {
+  if (reason instanceof Error && reason.message.trim()) return reason.message.trim();
+  if (typeof reason === "string" && reason.trim()) return reason.trim();
+  return fallback;
 }
 
 function diagnostic(

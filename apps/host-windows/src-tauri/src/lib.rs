@@ -6,6 +6,10 @@ use std::{
 };
 use tauri::Manager;
 
+mod onboarding;
+
+use onboarding::{OnboardingStore, OnboardingView, SignInResult};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SetupStep {
@@ -154,6 +158,184 @@ fn complete_setup_step(
 }
 
 #[tauri::command]
+fn host_onboarding_status(
+    onboarding: tauri::State<'_, OnboardingStore>,
+) -> Result<OnboardingView, String> {
+    onboarding.view()
+}
+
+#[tauri::command]
+fn configure_classroom_service(
+    service_url: String,
+    publishable_key: String,
+    onboarding: tauri::State<'_, OnboardingStore>,
+) -> Result<OnboardingView, String> {
+    onboarding.configure(service_url, publishable_key)
+}
+
+#[tauri::command]
+async fn sign_in_instructor(
+    email: String,
+    password: String,
+    onboarding: tauri::State<'_, OnboardingStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<SignInResult, String> {
+    let result = onboarding.sign_in(email, password).await?;
+    mark_setup_step(
+        &host,
+        "instructor_sign_in",
+        "Instructor identity verified by the classroom service.",
+    )?;
+    Ok(result)
+}
+
+#[tauri::command]
+async fn pair_classroom_host(
+    organization_id: String,
+    location_id: String,
+    display_name: String,
+    onboarding: tauri::State<'_, OnboardingStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<OnboardingView, String> {
+    let view = onboarding
+        .pair(organization_id, location_id, display_name)
+        .await?;
+    let detail = view
+        .location_name
+        .as_deref()
+        .unwrap_or("Configured location");
+    mark_setup_step(&host, "location", detail)?;
+    Ok(view)
+}
+
+#[tauri::command]
+fn sign_out_instructor(
+    onboarding: tauri::State<'_, OnboardingStore>,
+) -> Result<OnboardingView, String> {
+    onboarding.sign_out()
+}
+
+#[tauri::command]
+fn probe_host_hardware(store: tauri::State<'_, HostStore>) -> Result<HostSnapshot, String> {
+    let mut snapshot = store
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    let supported_platform = cfg!(all(windows, target_arch = "x86_64"));
+    upsert_readiness(
+        &mut snapshot,
+        ReadinessCheck {
+            id: "platform".to_string(),
+            label: "Supported Windows platform".to_string(),
+            status: if supported_platform {
+                "ready"
+            } else {
+                "blocked"
+            }
+            .to_string(),
+            measured: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+            requirement: "Windows 10/11 x64".to_string(),
+            recovery: (!supported_platform).then(|| {
+                "Install BadgerBots Host on a supported Windows 10/11 x64 laptop.".to_string()
+            }),
+        },
+    );
+    let memory_gib = total_memory_bytes().map(|bytes| bytes as f64 / 1_073_741_824.0);
+    let memory_status = match memory_gib {
+        Some(value) if value >= 16.0 => "ready",
+        Some(value) if value >= 12.0 => "warning",
+        _ => "blocked",
+    };
+    upsert_readiness(
+        &mut snapshot,
+        ReadinessCheck {
+            id: "memory".to_string(),
+            label: "System memory".to_string(),
+            status: memory_status.to_string(),
+            measured: memory_gib
+                .map(|value| format!("{value:.1} GiB installed"))
+                .unwrap_or_else(|| "Could not measure installed memory".to_string()),
+            requirement: "16 GiB recommended for a 25-student camp".to_string(),
+            recovery: (memory_status == "blocked").then(|| {
+                "Use a teacher laptop with at least 12 GiB RAM; 16 GiB remains the target."
+                    .to_string()
+            }),
+        },
+    );
+    if supported_platform
+        && memory_status != "blocked"
+        && let Some(step) = snapshot
+            .setup_steps
+            .iter_mut()
+            .find(|step| step.id == "hardware_readiness")
+    {
+        step.status = "complete".to_string();
+        step.detail = "Native platform and memory probes completed.".to_string();
+    }
+    push_diagnostic(
+        &mut snapshot,
+        "HOST_HARDWARE_PROBED",
+        "Native platform and memory readiness checks completed.",
+        if supported_platform && memory_status != "blocked" {
+            "info"
+        } else {
+            "warning"
+        },
+    );
+    store.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+fn upsert_readiness(snapshot: &mut HostSnapshot, check: ReadinessCheck) {
+    if let Some(existing) = snapshot
+        .readiness
+        .iter_mut()
+        .find(|existing| existing.id == check.id)
+    {
+        *existing = check;
+    } else {
+        snapshot.readiness.push(check);
+    }
+}
+
+#[cfg(windows)]
+fn total_memory_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.ullTotalPhys)
+}
+
+#[cfg(not(windows))]
+fn total_memory_bytes() -> Option<u64> {
+    None
+}
+
+fn mark_setup_step(store: &HostStore, step_id: &str, detail: &str) -> Result<(), String> {
+    let mut snapshot = store
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    if let Some(step) = snapshot
+        .setup_steps
+        .iter_mut()
+        .find(|step| step.id == step_id)
+    {
+        step.status = "complete".to_string();
+        step.detail = sanitize(detail);
+    }
+    push_diagnostic(
+        &mut snapshot,
+        "HOST_ONBOARDING_PROGRESS",
+        "A protected Host onboarding step completed.",
+        "info",
+    );
+    store.persist(&snapshot)
+}
+
+#[tauri::command]
 fn transition_server(
     action: String,
     store: tauri::State<'_, HostStore>,
@@ -194,14 +376,32 @@ fn initial_snapshot() -> HostSnapshot {
                 detail: "Waiting".to_string(),
             })
             .collect(),
-        readiness: vec![ReadinessCheck {
-            id: "platform".to_string(),
-            label: "Supported Windows platform".to_string(),
-            status: if cfg!(windows) { "pending" } else { "blocked" }.to_string(),
-            measured: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
-            requirement: "Windows 10/11 x64".to_string(),
-            recovery: Some("Run this build on the teacher Windows PC.".to_string()),
-        }],
+        readiness: vec![
+            ReadinessCheck {
+                id: "platform".to_string(),
+                label: "Supported Windows platform".to_string(),
+                status: if cfg!(windows) { "pending" } else { "blocked" }.to_string(),
+                measured: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
+                requirement: "Windows 10/11 x64".to_string(),
+                recovery: Some("Run this build on the teacher Windows PC.".to_string()),
+            },
+            ReadinessCheck {
+                id: "memory".to_string(),
+                label: "System memory".to_string(),
+                status: "pending".to_string(),
+                measured: "Not measured".to_string(),
+                requirement: "16 GiB recommended for a 25-student camp".to_string(),
+                recovery: None,
+            },
+            ReadinessCheck {
+                id: "network".to_string(),
+                label: "Local network".to_string(),
+                status: "pending".to_string(),
+                measured: "Test server has not run".to_string(),
+                requirement: "Private Wi-Fi and scoped Minecraft port".to_string(),
+                recovery: None,
+            },
+        ],
         artifacts: [
             ("java", "Managed Java 21"),
             ("paper", "Paper 1.21.11"),
@@ -286,13 +486,21 @@ fn sanitize(value: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let state_path = app.path().app_local_data_dir()?.join("host-state.json");
+            let data_directory = app.path().app_local_data_dir()?;
+            let state_path = data_directory.join("host-state.json");
             app.manage(HostStore::load(state_path));
+            app.manage(OnboardingStore::load(&data_directory).map_err(std::io::Error::other)?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             host_snapshot,
             complete_setup_step,
+            host_onboarding_status,
+            configure_classroom_service,
+            sign_in_instructor,
+            pair_classroom_host,
+            sign_out_instructor,
+            probe_host_hardware,
             transition_server
         ])
         .run(tauri::generate_context!())

@@ -16,7 +16,10 @@ the complete Sheep City behavior, equipment, fall protection, and respawn path. 
 mode now adds encrypted four-hour browser/API recovery; the owner has validated that path against
 Supabase Free. Checkpoint 13 adds real instructor/camper Auth boundaries, weekly sessions, Realtime
 workspace hints, a dashboard, and an outbound durable Host command queue. Its new migration,
-Edge Function deployment, and two-device cloud-to-Paper path still require manual validation. See the
+Edge Function deployment, and two-device cloud-to-Paper path still require manual validation.
+Checkpoint 14 begins release productization: the native Windows Host now owns instructor sign-in,
+location selection, secure pairing, current-user protected credential storage, and hardware
+probing inside its graphical wizard. Paper/runtime packaging remains the next slice. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),
 and [$0 pilot capacity budget](docs/free-tier-capacity-budget.md). No source curriculum has been

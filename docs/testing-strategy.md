@@ -68,6 +68,13 @@ bind delivery signatures to a dedicated credential and exact payload. Live gates
 migration/function deployment, owner/assistant authorization, two-device RLS/Realtime, deliberate
 save conflict, Host reconnect/redelivery, and cloud-to-real-Paper Run/Stop.
 
+Checkpoint 14 adds strict native Host service-configuration validation, rejects Secret keys at the
+UI and Rust boundaries, limits the native Edge client to authenticated profile/pair actions, and
+tests the graphical onboarding state. Windows CI additionally exercises current-user DPAPI
+protect/unprotect and builds the NSIS installer with optional public service configuration.
+Physical Windows evidence must prove restart persistence, no plaintext credential, assistant
+denial, no console window, and the native platform/RAM probe.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

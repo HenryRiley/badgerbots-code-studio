@@ -1,6 +1,7 @@
 import {
   createJoinCode,
   hmacHex,
+  nativeHostOnboardingActionAllowed,
   sheepCityStarterProgram,
   validateCamperName,
   validateClassroomProgram,
@@ -55,6 +56,14 @@ Deno.test("edge validation accepts the canonical starter and rejects oversized o
     power: 100,
   });
   assertThrows(() => validateClassroomProgram(invalid));
+});
+
+Deno.test("native Host onboarding is restricted to authenticated setup actions", () => {
+  assertEquals(nativeHostOnboardingActionAllowed("profile"), true);
+  assertEquals(nativeHostOnboardingActionAllowed("pair_host"), true);
+  assertEquals(nativeHostOnboardingActionAllowed("join"), false);
+  assertEquals(nativeHostOnboardingActionAllowed("queue_runtime"), false);
+  assertEquals(nativeHostOnboardingActionAllowed("host_poll"), false);
 });
 
 function assertEquals(actual: unknown, expected: unknown): void {

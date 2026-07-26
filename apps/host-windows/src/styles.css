@@ -123,12 +123,118 @@ h2 {
   background: #fff8e7;
   font-size: 13px;
 }
+.notice.product-boundary {
+  color: #245c49;
+  border-color: #b8dccd;
+  background: #effaf5;
+}
 .error-banner {
   padding: 12px 15px;
   margin-bottom: 18px;
   color: #7d252c;
   border-radius: 10px;
   background: #fbe8e9;
+}
+.status-banner {
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  color: #496777;
+  border: 1px solid #d8e4e8;
+  border-radius: 10px;
+  background: #f8fbfc;
+  font-size: 12px;
+}
+.onboarding-card {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(480px, 1.4fr);
+  gap: 28px;
+  align-items: center;
+  padding: 24px;
+  margin-bottom: 18px;
+  border: 1px solid #bcd8d1;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ffffff, #f1faf6);
+  box-shadow: 0 11px 28px #1f4b5d12;
+}
+.onboarding-card.complete-card {
+  display: flex;
+  justify-content: space-between;
+}
+.onboarding-card p {
+  margin: 6px 0 0;
+  color: #607885;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.wizard-heading {
+  display: flex;
+  gap: 15px;
+  align-items: flex-start;
+}
+.wizard-heading > span {
+  flex: 0 0 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: white;
+  background: linear-gradient(145deg, var(--blue), var(--green));
+  font-weight: 900;
+}
+.wizard-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.wizard-form.service-form {
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+}
+.wizard-form.pair-form {
+  grid-template-columns: 1fr 1fr 1.2fr auto;
+}
+.wizard-form label {
+  display: grid;
+  gap: 6px;
+  color: #355668;
+  font-size: 11px;
+  font-weight: 850;
+}
+.wizard-form input,
+.wizard-form select {
+  width: 100%;
+  min-width: 0;
+  height: 41px;
+  padding: 0 11px;
+  color: #15324a;
+  border: 1px solid #c7d9df;
+  border-radius: 9px;
+  outline: none;
+  background: white;
+  font: inherit;
+  font-size: 13px;
+}
+.wizard-form input:focus,
+.wizard-form select:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px #1c6b9119;
+}
+.secure-chip {
+  padding: 8px 11px;
+  color: #28664e;
+  border-radius: 999px;
+  background: var(--mint);
+  font-size: 11px;
+  font-weight: 850;
+}
+.inline-warning {
+  padding: 12px 14px;
+  color: #79541b;
+  border: 1px solid #ead5a8;
+  border-radius: 10px;
+  background: #fff8e9;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .hero-grid {
   display: grid;
@@ -455,6 +561,14 @@ h2 {
 }
 
 @media (max-width: 1050px) {
+  .onboarding-card {
+    grid-template-columns: 1fr;
+  }
+  .wizard-form,
+  .wizard-form.service-form,
+  .wizard-form.pair-form {
+    grid-template-columns: 1fr 1fr;
+  }
   .hero-grid,
   .content-grid {
     grid-template-columns: 1fr;
@@ -464,6 +578,30 @@ h2 {
   }
   .diagnostics-panel {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  body {
+    min-width: 0;
+  }
+  .host-shell {
+    padding: 20px;
+  }
+  .topbar,
+  .notice,
+  .onboarding-card.complete-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .wizard-form,
+  .wizard-form.service-form,
+  .wizard-form.pair-form,
+  .bottom-grid {
+    grid-template-columns: 1fr;
+  }
+  .artifact-grid {
+    grid-template-columns: 1fr;
   }
 }
 

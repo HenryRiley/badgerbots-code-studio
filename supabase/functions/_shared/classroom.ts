@@ -159,6 +159,10 @@ export function validateDateRange(startsOn: string, endsOn: string): void {
   }
 }
 
+export function nativeHostOnboardingActionAllowed(action: string): boolean {
+  return action === "profile" || action === "pair_host";
+}
+
 export function createJoinCode(random: Uint8Array): string {
   if (random.byteLength < 8) {
     throw new Error("Eight random bytes are required.");

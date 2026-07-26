@@ -137,6 +137,9 @@ jobs:
 
       - name: Build unsigned NSIS prototype
         run: pnpm --filter @badgerbots/host-windows tauri build --bundles nsis
+        env:
+          VITE_BADGERBOTS_SUPABASE_URL: ${{ vars.BADGERBOTS_SUPABASE_URL }}
+          VITE_BADGERBOTS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.BADGERBOTS_SUPABASE_PUBLISHABLE_KEY }}
 
       - name: Record installer checksum
         shell: pwsh
