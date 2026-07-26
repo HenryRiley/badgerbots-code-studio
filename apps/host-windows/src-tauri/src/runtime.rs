@@ -1,9 +1,19 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
 };
+
+const PAPER_URL: &str = "https://fill-data.papermc.io/v1/objects/5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba/paper-1.21.11-132.jar";
+pub const PAPER_SHA256: &str = "5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba";
+const PAPER_VERSION: &str = "Paper 1.21.11 build 132";
+const PLUGIN_VERSION: &str = "BadgerBots Paper plugin 0.4.0-prototype";
+const MAX_PAPER_BYTES: u64 = 80 * 1024 * 1024;
+const EMBEDDED_PLUGIN: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/badgerbots-paper-plugin.jar"));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +24,16 @@ pub struct RuntimeConfiguration {
     pub max_heap_gib: u8,
     pub java_version: String,
     pub eula_accepted: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactPreparation {
+    pub java_version: String,
+    pub paper_version: String,
+    pub paper_sha256: String,
+    pub plugin_version: String,
+    pub plugin_sha256: String,
 }
 
 pub struct RuntimeStore {
@@ -57,6 +77,119 @@ impl RuntimeStore {
         persist_text_atomic(&self.directory.join("badgerbots-runtime.json"), &serialized)?;
         Ok(configuration)
     }
+
+    pub async fn prepare_artifacts(&self) -> Result<ArtifactPreparation, String> {
+        if !self.directory.join("badgerbots-runtime.json").is_file() {
+            return Err(
+                "Complete server configuration before installing server files.".to_string(),
+            );
+        }
+        let java_version = detect_java_21()?;
+        validate_jar(EMBEDDED_PLUGIN, "BadgerBots plugin")?;
+
+        let paper_path = self.directory.join("paper-1.21.11-132.jar");
+        let paper_bytes = if checksum_file(&paper_path).as_deref() == Some(PAPER_SHA256) {
+            None
+        } else {
+            let client = reqwest::Client::builder()
+                .user_agent(
+                    "BadgerBots-Code-Studio/0.4.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                )
+                .connect_timeout(Duration::from_secs(20))
+                .timeout(Duration::from_secs(180))
+                .build()
+                .map_err(|_| "The secure Paper downloader could not be prepared.".to_string())?;
+            let response = client.get(PAPER_URL).send().await.map_err(|_| {
+                "Paper could not be downloaded. Check the internet connection and try again."
+                    .to_string()
+            })?;
+            if !response.status().is_success() {
+                return Err(format!(
+                    "Paper download failed with HTTP status {}. Try again later.",
+                    response.status()
+                ));
+            }
+            if response
+                .content_length()
+                .is_some_and(|length| length > MAX_PAPER_BYTES)
+            {
+                return Err("The Paper download exceeded the expected size limit.".to_string());
+            }
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|_| "The Paper download ended unexpectedly. Try again.".to_string())?;
+            if bytes.len() as u64 > MAX_PAPER_BYTES {
+                return Err("The Paper download exceeded the expected size limit.".to_string());
+            }
+            verify_checksum(&bytes, PAPER_SHA256, "Paper")?;
+            validate_jar(&bytes, "Paper")?;
+            Some(bytes)
+        };
+
+        if let Some(bytes) = paper_bytes {
+            persist_bytes_atomic(&paper_path, &bytes)?;
+        }
+        let plugin_path = self
+            .directory
+            .join("plugins")
+            .join("badgerbots-paper-plugin.jar");
+        let plugin_sha256 = checksum_bytes(EMBEDDED_PLUGIN);
+        if checksum_file(&plugin_path).as_deref() != Some(plugin_sha256.as_str()) {
+            persist_bytes_atomic(&plugin_path, EMBEDDED_PLUGIN)?;
+        }
+        let manifest = ArtifactPreparation {
+            java_version,
+            paper_version: PAPER_VERSION.to_string(),
+            paper_sha256: PAPER_SHA256.to_string(),
+            plugin_version: PLUGIN_VERSION.to_string(),
+            plugin_sha256,
+        };
+        let serialized = serde_json::to_string_pretty(&manifest)
+            .map_err(|_| "The artifact manifest could not be serialized.".to_string())?;
+        persist_text_atomic(
+            &self.directory.join("badgerbots-artifacts.json"),
+            &serialized,
+        )?;
+        self.create_configuration_backup(&manifest)?;
+        Ok(manifest)
+    }
+
+    pub fn configuration(&self) -> Result<RuntimeConfiguration, String> {
+        let contents = fs::read_to_string(self.directory.join("badgerbots-runtime.json"))
+            .map_err(|_| "The managed server configuration could not be loaded.".to_string())?;
+        serde_json::from_str(&contents).map_err(|_| {
+            "The managed server configuration is invalid. Prepare it again.".to_string()
+        })
+    }
+
+    fn create_configuration_backup(&self, artifacts: &ArtifactPreparation) -> Result<(), String> {
+        let backup_directory = self.directory.join("backups").join("initial-configuration");
+        fs::create_dir_all(&backup_directory)
+            .map_err(|_| "The initial recovery directory could not be created.".to_string())?;
+        for name in [
+            "eula.txt",
+            "server.properties",
+            "badgerbots-runtime.json",
+            "badgerbots-artifacts.json",
+        ] {
+            let source = self.directory.join(name);
+            let bytes = fs::read(&source)
+                .map_err(|_| "The initial recovery snapshot could not be read.".to_string())?;
+            persist_bytes_atomic(&backup_directory.join(name), &bytes)?;
+        }
+        let evidence = serde_json::json!({
+            "schemaVersion": 1,
+            "kind": "configuration-only",
+            "paperSha256": artifacts.paper_sha256,
+            "pluginSha256": artifacts.plugin_sha256,
+        });
+        persist_text_atomic(
+            &backup_directory.join("verification.json"),
+            &serde_json::to_string_pretty(&evidence)
+                .map_err(|_| "Recovery evidence could not be serialized.".to_string())?,
+        )
+    }
 }
 
 fn validate_configuration(
@@ -86,7 +219,7 @@ fn validate_configuration(
     Ok(())
 }
 
-fn detect_java_21() -> Result<String, String> {
+pub fn detect_java_21() -> Result<String, String> {
     let mut command = Command::new("java");
     command.arg("-version");
     #[cfg(windows)]
@@ -140,11 +273,43 @@ fn server_properties(configuration: &RuntimeConfiguration) -> String {
 }
 
 fn persist_text_atomic(path: &Path, contents: &str) -> Result<(), String> {
+    persist_bytes_atomic(path, contents.as_bytes())
+}
+
+fn persist_bytes_atomic(path: &Path, contents: &[u8]) -> Result<(), String> {
     let temporary = path.with_extension("new");
     fs::write(&temporary, contents)
         .map_err(|_| "Managed server configuration could not be staged.".to_string())?;
     replace_file_atomic(&temporary, path)
         .map_err(|_| "Managed server configuration could not be saved atomically.".to_string())
+}
+
+fn checksum_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn checksum_file(path: &Path) -> Option<String> {
+    fs::read(path).ok().map(|bytes| checksum_bytes(&bytes))
+}
+
+fn verify_checksum(bytes: &[u8], expected: &str, label: &str) -> Result<(), String> {
+    if checksum_bytes(bytes) == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{label} failed checksum verification. No server file was installed."
+        ))
+    }
+}
+
+fn validate_jar(bytes: &[u8], label: &str) -> Result<(), String> {
+    if bytes.len() >= 4 && bytes.starts_with(b"PK\x03\x04") {
+        Ok(())
+    } else {
+        Err(format!(
+            "This Host installer does not contain a valid {label} JAR. Download a newly built installer."
+        ))
+    }
 }
 
 #[cfg(windows)]
@@ -211,5 +376,23 @@ mod tests {
         assert!(properties.contains("enable-rcon=false"));
         assert!(properties.contains("server-port=25565"));
         assert!(!properties.contains("Teacher_01"));
+    }
+
+    #[test]
+    fn verifies_artifact_checksums_and_jar_shape() {
+        let jar = b"PK\x03\x04badgerbots-test";
+        let checksum = checksum_bytes(jar);
+        assert!(verify_checksum(jar, &checksum, "Test artifact").is_ok());
+        assert!(verify_checksum(jar, &"0".repeat(64), "Test artifact").is_err());
+        assert!(validate_jar(jar, "test plugin").is_ok());
+        assert!(validate_jar(b"not a jar", "test plugin").is_err());
+    }
+
+    #[test]
+    fn validates_the_embedded_plugin_in_packaged_builds() {
+        if option_env!("BADGERBOTS_EMBEDDED_PLUGIN_PRESENT") == Some("true") {
+            validate_jar(EMBEDDED_PLUGIN, "BadgerBots plugin")
+                .expect("the packaged plugin must be a valid JAR");
+        }
     }
 }

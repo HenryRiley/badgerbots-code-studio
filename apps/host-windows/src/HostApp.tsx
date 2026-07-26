@@ -117,6 +117,8 @@ export function HostApp() {
         }}
         onHardwareProbed={setSnapshot}
         onServerConfigured={setSnapshot}
+        onRuntimePrepared={setSnapshot}
+        onFirewallApproved={setSnapshot}
       />
 
       <section className="hero-grid">
@@ -222,6 +224,13 @@ export function HostApp() {
                   <span className={`artifact-status ${artifact.status}`}>{artifact.status}</span>
                   <strong>{artifact.label}</strong>
                   <p>{artifact.version}</p>
+                  {artifact.status === "verified" ? (
+                    <small className="artifact-proof">
+                      {artifact.checksum === "system-version-probe"
+                        ? "System version probe"
+                        : `SHA-256 ${artifact.checksum.slice(0, 12)}…`}
+                    </small>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -305,6 +314,8 @@ function OnboardingWizard(props: {
   onPaired(view: HostOnboardingView): void;
   onHardwareProbed(snapshot: HostSnapshot): void;
   onServerConfigured(snapshot: HostSnapshot): void;
+  onRuntimePrepared(snapshot: HostSnapshot): void;
+  onFirewallApproved(snapshot: HostSnapshot): void;
 }) {
   const [serviceUrl, setServiceUrl] = useState<string>(
     buildSetting("VITE_BADGERBOTS_SUPABASE_URL"),
@@ -343,6 +354,9 @@ function OnboardingWizard(props: {
   }, [locationId, locations]);
 
   const nextStep = props.snapshot.setupSteps.find((step) => step.status !== "complete");
+  const artifactsReady = props.snapshot.artifacts.every(
+    (artifact) => artifact.status === "verified",
+  );
 
   if (props.onboarding.paired && nextStep?.id === "server_configuration")
     return (
@@ -431,6 +445,73 @@ function OnboardingWizard(props: {
             Prepare server
           </button>
         </form>
+      </section>
+    );
+
+  if (props.onboarding.paired && nextStep?.id === "firewall_approval" && !artifactsReady)
+    return (
+      <section className="onboarding-card">
+        <div className="wizard-heading">
+          <span>5</span>
+          <div>
+            <p className="eyebrow">Verified server files</p>
+            <h2>Install the Minecraft runtime</h2>
+            <p>
+              Host will download the pinned Paper server from PaperMC, verify its SHA-256 checksum,
+              install the BadgerBots plugin bundled with this installer, and create a configuration
+              recovery snapshot.
+            </p>
+          </div>
+        </div>
+        <div className="wizard-action">
+          <span className="secure-chip">No terminal or configuration editing</span>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={props.busy}
+            onClick={() =>
+              void props.perform(async () => {
+                props.onRuntimePrepared(await gateway.prepareRuntimeArtifacts());
+                return "Paper, the BadgerBots plugin, and Java 21 passed runtime preparation.";
+              })
+            }
+          >
+            {props.busy ? "Downloading and verifying…" : "Install verified server files"}
+          </button>
+        </div>
+      </section>
+    );
+
+  if (props.onboarding.paired && nextStep?.id === "firewall_approval" && artifactsReady)
+    return (
+      <section className="onboarding-card">
+        <div className="wizard-heading">
+          <span>6</span>
+          <div>
+            <p className="eyebrow">Windows network approval</p>
+            <h2>Allow Minecraft on this private network</h2>
+            <p>
+              Windows will show one administrator approval prompt. Host adds only an inbound TCP
+              rule for the configured Minecraft port and only for networks marked Private.
+            </p>
+          </div>
+        </div>
+        <div className="wizard-action">
+          <span className="secure-chip">No public-internet port is opened</span>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={props.busy}
+            onClick={() =>
+              void props.perform(async () => {
+                props.onFirewallApproved(await gateway.approveFirewall());
+                return "Windows Private-network Minecraft access was approved.";
+              })
+            }
+          >
+            {props.busy ? "Waiting for Windows…" : "Approve private-network access"}
+          </button>
+        </div>
       </section>
     );
 

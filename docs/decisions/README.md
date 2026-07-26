@@ -18,5 +18,6 @@ Decisions are immutable records. Supersede an accepted decision with a new ADR i
 | [0012](0012-connected-classroom-identity-and-edge-api.md)          | Accepted   | Connected classroom identity, Realtime, and Edge API     |
 | [0013](0013-native-host-onboarding-and-credential-storage.md)      | Accepted   | Native Host onboarding and Windows credential storage    |
 | [0014](0014-managed-runtime-directory-and-server-configuration.md) | Accepted   | Managed private Minecraft runtime configuration          |
+| [0015](0015-host-artifact-and-firewall-boundary.md)                | Accepted   | Verified Host artifacts and private-network firewall     |
 
 The zero-cost provider decision is accepted for the one-camp pilot only and remains gated by capacity, recovery, privacy, and pre-camp readiness tests. The Minecraft decision remains proposed until its compatibility spike passes.

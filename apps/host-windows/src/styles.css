@@ -196,6 +196,15 @@ h2 {
 .wizard-form.runtime-form {
   grid-template-columns: 1.25fr 0.7fr 0.9fr 1.5fr auto;
 }
+.wizard-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+}
+.wizard-action .primary-button {
+  min-width: 220px;
+}
 .wizard-form label {
   display: grid;
   gap: 6px;
@@ -457,6 +466,13 @@ h2 {
   color: #728792;
   font-size: 11px;
 }
+.artifact-proof {
+  display: block;
+  margin-top: 5px;
+  color: #66808d;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 8px;
+}
 .check-list {
   margin-top: 15px;
 }
@@ -593,6 +609,9 @@ h2 {
   .wizard-form.runtime-form {
     grid-template-columns: 1fr 1fr;
   }
+  .wizard-action {
+    justify-content: flex-start;
+  }
   .hero-grid,
   .content-grid {
     grid-template-columns: 1fr;
@@ -624,6 +643,10 @@ h2 {
   .wizard-form.runtime-form,
   .bottom-grid {
     grid-template-columns: 1fr;
+  }
+  .wizard-action {
+    align-items: stretch;
+    flex-direction: column;
   }
   .artifact-grid {
     grid-template-columns: 1fr;

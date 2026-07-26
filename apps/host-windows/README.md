@@ -10,9 +10,13 @@ Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomical
 application-local runtime directory with restricted server settings. It never globally changes
 Java or an existing Minecraft server.
 
-It does **not** yet download or start Paper, change the Windows firewall, prevent sleep, acquire the
-plugin, create backups, or install an update. Those controls remain visibly locked until their
-verified native implementations exist.
+Host 0.4.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
+Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
+firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
+
+It does **not** yet start Paper, prevent sleep, verify a world backup, remove/repair the firewall
+rule, install a private managed Java distribution, or install an update. Those controls remain
+visibly locked until their verified native implementations exist.
 
 ## Browser preview
 
@@ -37,6 +41,10 @@ The managed Minecraft runtime is stored below the same application-local data ro
 `minecraft-runtime`. Host writes `eula.txt`, `server.properties`, and
 `badgerbots-runtime.json`; it also prepares private plugin, bridge, and backup directories. The
 teacher username is metadata and is never used as a file path.
+
+Paper remains downloaded rather than redistributed. The installer embeds only the BadgerBots-owned
+plugin compiled from the same commit. An internal build that omits the plugin fails closed during
+runtime preparation.
 
 Production installer builds should set the public repository variables
 `BADGERBOTS_SUPABASE_URL` and `BADGERBOTS_SUPABASE_PUBLISHABLE_KEY`; CI maps them to Vite build

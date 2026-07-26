@@ -16,6 +16,7 @@ coverage/
 .DS_Store
 Thumbs.db
 work/
+apps/host-windows/src-tauri/bundled/*.jar
 worlds/local/
 worlds/backups/
 curriculum/source-material/*.pdf

@@ -6,9 +6,11 @@ use std::{
 };
 use tauri::Manager;
 
+mod firewall;
 mod onboarding;
 mod runtime;
 
+use firewall::approve_private_minecraft_port;
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
 use runtime::RuntimeStore;
 
@@ -333,6 +335,99 @@ fn configure_minecraft_server(
     host_snapshot(host)
 }
 
+#[tauri::command]
+async fn prepare_runtime_artifacts(
+    runtime: tauri::State<'_, RuntimeStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        let next_step = snapshot
+            .setup_steps
+            .iter()
+            .find(|step| step.status != "complete")
+            .map(|step| step.id.as_str());
+        if next_step != Some("firewall_approval") {
+            return Err("Complete the earlier Host setup steps first.".to_string());
+        }
+    }
+    let prepared = runtime.prepare_artifacts().await?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    for artifact in &mut snapshot.artifacts {
+        match artifact.id.as_str() {
+            "java" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.java_version.clone();
+                artifact.checksum = "system-version-probe".to_string();
+            }
+            "paper" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.paper_version.clone();
+                artifact.checksum = prepared.paper_sha256.clone();
+            }
+            "plugin" => {
+                artifact.status = "verified".to_string();
+                artifact.version = prepared.plugin_version.clone();
+                artifact.checksum = prepared.plugin_sha256.clone();
+            }
+            _ => {}
+        }
+    }
+    push_diagnostic(
+        &mut snapshot,
+        "HOST_ARTIFACTS_VERIFIED",
+        "Pinned Paper and the bundled BadgerBots plugin passed verification; Java 21 passed a system version probe.",
+        "info",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+#[tauri::command]
+fn approve_minecraft_firewall(
+    runtime: tauri::State<'_, RuntimeStore>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        let next_step = snapshot
+            .setup_steps
+            .iter()
+            .find(|step| step.status != "complete")
+            .map(|step| step.id.as_str());
+        if next_step != Some("firewall_approval")
+            || snapshot
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.status != "verified")
+        {
+            return Err(
+                "Install and verify the server files before firewall approval.".to_string(),
+            );
+        }
+    }
+    let configuration = runtime.configuration()?;
+    approve_private_minecraft_port(configuration.server_port)?;
+    mark_setup_step(
+        &host,
+        "firewall_approval",
+        &format!(
+            "Windows Private-network TCP access approved for port {}.",
+            configuration.server_port
+        ),
+    )?;
+    host_snapshot(host)
+}
+
 fn upsert_readiness(snapshot: &mut HostSnapshot, check: ReadinessCheck) {
     if let Some(existing) = snapshot
         .readiness
@@ -550,6 +645,8 @@ pub fn run() {
             sign_out_instructor,
             probe_host_hardware,
             configure_minecraft_server,
+            prepare_runtime_artifacts,
+            approve_minecraft_firewall,
             transition_server
         ])
         .run(tauri::generate_context!())
