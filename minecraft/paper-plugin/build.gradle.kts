@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "org.badgerbots"
-version = "0.5.0-prototype"
+version = "0.6.0-prototype"
 
 repositories {
     mavenCentral()

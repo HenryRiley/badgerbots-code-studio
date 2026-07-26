@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   completeSetupStep,
   createInitialHostSnapshot,
-  requestServerTransition,
   type HostOnboardingView,
   type HostSnapshot,
   type InstructorProfile,
@@ -33,10 +32,10 @@ export interface HostGateway {
   prepareRuntimeArtifacts(): Promise<HostSnapshot>;
   approveFirewall(): Promise<HostSnapshot>;
   testServer(): Promise<HostSnapshot>;
+  startServer(): Promise<HostSnapshot>;
+  stopServer(): Promise<HostSnapshot>;
+  recoverServer(): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
-  transition(
-    action: "start" | "mark_running" | "stop" | "mark_stopped" | "crash",
-  ): Promise<HostSnapshot>;
   resetPreview(): Promise<HostSnapshot>;
 }
 
@@ -143,7 +142,7 @@ export function createHostGateway(): HostGateway {
               ? "openjdk version 21 (preview)"
               : artifact.id === "paper"
                 ? "Paper 1.21.11 build 132"
-                : "BadgerBots Paper plugin 0.4.0-prototype",
+                : "BadgerBots Paper plugin 0.6.0-prototype",
           checksum: artifact.id === "java" ? "system-version-probe" : "a".repeat(64),
         })),
       };
@@ -190,12 +189,53 @@ export function createHostGateway(): HostGateway {
       );
       return Promise.resolve(structuredClone(snapshot));
     },
-    completeStep: (stepId, detail) => {
-      snapshot = completeSetupStep(snapshot, stepId, detail);
+    startServer: () => {
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "running",
+          activeCamp: true,
+          sleepInhibition: "active",
+          lastExit: "unknown",
+        },
+        serverLogs: [
+          ...snapshot.serverLogs,
+          "[Host] Starting the managed classroom server…",
+          '[Paper] Done (preview)! For help, type "help"',
+        ].slice(-80),
+      };
       return Promise.resolve(structuredClone(snapshot));
     },
-    transition: (action) => {
-      snapshot = requestServerTransition(snapshot, action);
+    stopServer: () => {
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          activeCamp: false,
+          sleepInhibition: "inactive",
+          lastExit: "clean",
+        },
+        serverLogs: [...snapshot.serverLogs, "[Paper] Stopping server"].slice(-80),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    recoverServer: () => {
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          activeCamp: false,
+          sleepInhibition: "inactive",
+          recoveryRequired: false,
+        },
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    completeStep: (stepId, detail) => {
+      snapshot = completeSetupStep(snapshot, stepId, detail);
       return Promise.resolve(structuredClone(snapshot));
     },
     resetPreview: () => {
@@ -229,7 +269,9 @@ const nativeGateway: HostGateway = {
   prepareRuntimeArtifacts: () => invoke<HostSnapshot>("prepare_runtime_artifacts"),
   approveFirewall: () => invoke<HostSnapshot>("approve_minecraft_firewall"),
   testServer: () => invoke<HostSnapshot>("test_minecraft_server"),
+  startServer: () => invoke<HostSnapshot>("start_minecraft_server"),
+  stopServer: () => invoke<HostSnapshot>("stop_minecraft_server"),
+  recoverServer: () => invoke<HostSnapshot>("recover_minecraft_server"),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
-  transition: (action) => invoke<HostSnapshot>("transition_server", { action }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),
 };

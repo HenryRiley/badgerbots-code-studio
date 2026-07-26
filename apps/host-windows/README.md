@@ -10,15 +10,23 @@ Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomical
 application-local runtime directory with restricted server settings. It never globally changes
 Java or an existing Minecraft server.
 
-Host 0.5.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
+Host 0.6.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
 Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
 firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
 
 The final setup step performs a bounded real Paper smoke test: it verifies the Sheep City plugin,
 authenticated local bridge, loopback listener, and clean shutdown while keeping redacted output in
-the built-in console. It does **not** yet provide permanent camp Start/Stop, prevent sleep, verify a
-world backup, remove/repair the firewall rule, install a private managed Java distribution, or
-install an update.
+the built-in console.
+
+After setup, Host owns the long-running Paper process. **Start classroom server**, **Stop server**,
+and **Verify and recover** are native controls. Starting and running output streams into the
+in-app console in real time, with the newest 80 redacted lines retained. The console is read-only:
+it does not execute arbitrary Paper, Java, or shell commands. A normal app close first asks Paper
+to stop cleanly, and Windows sleep is inhibited only while the server is ready.
+
+Host does **not** yet verify a world backup, remove/repair the firewall rule, install a private
+managed Java distribution, or install an update. Forced process termination and power-loss
+recovery still need physical Windows drills.
 
 ## Browser preview
 
@@ -52,7 +60,10 @@ Production installer builds should set the public repository variables
 `BADGERBOTS_SUPABASE_URL` and `BADGERBOTS_SUPABASE_PUBLISHABLE_KEY`; CI maps them to Vite build
 values. Internal unconfigured builds provide a graphical form and reject Secret keys.
 
-Installed release builds use the Windows GUI subsystem, so launching BadgerBots Host does not open a Command Prompt window. Operational events belong in the app's redacted **Recent events** panel. Development builds may still write diagnostics to the terminal that launched them.
+Installed release builds use the Windows GUI subsystem, so launching BadgerBots Host or Paper does
+not open a Command Prompt window. Paper output belongs in the redacted **Live server console** and
+Host operations appear under **Recent events**. Development builds may still write diagnostics to
+the terminal that launched them.
 
 ## Checks
 

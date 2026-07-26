@@ -9,9 +9,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-const START_TIMEOUT: Duration = Duration::from_secs(180);
-const STOP_TIMEOUT: Duration = Duration::from_secs(60);
-const MAX_LOG_LINES: usize = 80;
+pub(crate) const START_TIMEOUT: Duration = Duration::from_secs(180);
+pub(crate) const STOP_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const MAX_LOG_LINES: usize = 80;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,13 +31,107 @@ pub struct ServerTestFailure {
 }
 
 #[derive(Default)]
-struct ReadinessSignals {
+pub(crate) struct ReadinessSignals {
     paper: bool,
     plugin: bool,
     bridge: bool,
 }
 
 pub fn run(launch: ServerLaunch) -> Result<ServerTestReport, ServerTestFailure> {
+    let (mut child, receiver) = spawn_server(&launch)?;
+    let mut logs = Vec::new();
+    let mut signals = ReadinessSignals::default();
+    let started = Instant::now();
+
+    while started.elapsed() < START_TIMEOUT {
+        if let Ok(line) = receiver.recv_timeout(Duration::from_millis(250)) {
+            inspect_line(
+                &redact_line(&line, &launch.runtime_directory),
+                &mut logs,
+                &mut signals,
+            );
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|_| failure("Paper process status could not be inspected.", logs.clone()))?
+        {
+            drain_output(
+                &receiver,
+                &launch.runtime_directory,
+                &mut logs,
+                &mut signals,
+            );
+            return Err(failure(
+                &format!(
+                    "Paper stopped before the readiness test completed (exit {}). Review the in-app server log.",
+                    status
+                        .code()
+                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+                ),
+                logs,
+            ));
+        }
+        if signals.complete() {
+            break;
+        }
+    }
+
+    if !signals.complete() {
+        stop_or_kill(&mut child);
+        drain_output(
+            &receiver,
+            &launch.runtime_directory,
+            &mut logs,
+            &mut signals,
+        );
+        return Err(failure(
+            "Paper did not report server, plugin, and authenticated bridge readiness within three minutes.",
+            logs,
+        ));
+    }
+
+    let port_ready = loopback_connects(launch.configuration.server_port);
+    if !port_ready {
+        stop_or_kill(&mut child);
+        drain_output(
+            &receiver,
+            &launch.runtime_directory,
+            &mut logs,
+            &mut signals,
+        );
+        return Err(failure(
+            "Paper reported Ready, but its local Minecraft port could not be reached.",
+            logs,
+        ));
+    }
+
+    let clean_exit = request_clean_stop(&mut child);
+    drain_output(
+        &receiver,
+        &launch.runtime_directory,
+        &mut logs,
+        &mut signals,
+    );
+    if !clean_exit {
+        return Err(failure(
+            "Paper did not stop cleanly after the readiness test and was terminated.",
+            logs,
+        ));
+    }
+
+    Ok(ServerTestReport {
+        logs,
+        paper_ready: signals.paper,
+        plugin_ready: signals.plugin,
+        bridge_ready: signals.bridge,
+        port_ready,
+        clean_exit,
+    })
+}
+
+pub(crate) fn spawn_server(
+    launch: &ServerLaunch,
+) -> Result<(Child, mpsc::Receiver<String>), ServerTestFailure> {
     ensure_port_available(launch.configuration.server_port)?;
     std::fs::create_dir_all(launch.bridge_directory.join("inbox")).map_err(|_| {
         failure(
@@ -96,94 +190,7 @@ pub fn run(launch: ServerLaunch) -> Result<ServerTestReport, ServerTestFailure> 
         )
     })?;
     let receiver = capture_output(&mut child);
-    let mut logs = Vec::new();
-    let mut signals = ReadinessSignals::default();
-    let started = Instant::now();
-
-    while started.elapsed() < START_TIMEOUT {
-        if let Ok(line) = receiver.recv_timeout(Duration::from_millis(250)) {
-            inspect_line(
-                &redact_line(&line, &launch.runtime_directory),
-                &mut logs,
-                &mut signals,
-            );
-        }
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|_| failure("Paper process status could not be inspected.", logs.clone()))?
-        {
-            drain_output(
-                &receiver,
-                &launch.runtime_directory,
-                &mut logs,
-                &mut signals,
-            );
-            return Err(failure(
-                &format!(
-                    "Paper stopped before the readiness test completed (exit {}). Review the in-app server log.",
-                    status
-                        .code()
-                        .map_or_else(|| "unknown".to_string(), |code| code.to_string())
-                ),
-                logs,
-            ));
-        }
-        if signals.paper && signals.plugin && signals.bridge {
-            break;
-        }
-    }
-
-    if !(signals.paper && signals.plugin && signals.bridge) {
-        stop_or_kill(&mut child);
-        drain_output(
-            &receiver,
-            &launch.runtime_directory,
-            &mut logs,
-            &mut signals,
-        );
-        return Err(failure(
-            "Paper did not report server, plugin, and authenticated bridge readiness within three minutes.",
-            logs,
-        ));
-    }
-
-    let port_ready = loopback_connects(launch.configuration.server_port);
-    if !port_ready {
-        stop_or_kill(&mut child);
-        drain_output(
-            &receiver,
-            &launch.runtime_directory,
-            &mut logs,
-            &mut signals,
-        );
-        return Err(failure(
-            "Paper reported Ready, but its local Minecraft port could not be reached.",
-            logs,
-        ));
-    }
-
-    let clean_exit = request_clean_stop(&mut child);
-    drain_output(
-        &receiver,
-        &launch.runtime_directory,
-        &mut logs,
-        &mut signals,
-    );
-    if !clean_exit {
-        return Err(failure(
-            "Paper did not stop cleanly after the readiness test and was terminated.",
-            logs,
-        ));
-    }
-
-    Ok(ServerTestReport {
-        logs,
-        paper_ready: signals.paper,
-        plugin_ready: signals.plugin,
-        bridge_ready: signals.bridge,
-        port_ready,
-        clean_exit,
-    })
+    Ok((child, receiver))
 }
 
 fn capture_output(child: &mut Child) -> mpsc::Receiver<String> {
@@ -208,9 +215,7 @@ fn spawn_reader(stream: impl Read + Send + 'static, sender: mpsc::Sender<String>
 }
 
 fn inspect_line(line: &str, logs: &mut Vec<String>, signals: &mut ReadinessSignals) {
-    signals.paper |= line.contains("Done (") && line.contains("For help, type \"help\"");
-    signals.plugin |= line.contains("BadgerBots Sheep City runtime loaded");
-    signals.bridge |= line.contains("Authenticated BadgerBots Host bridge is ready");
+    signals.observe(line);
     logs.push(line.chars().take(500).collect());
     if logs.len() > MAX_LOG_LINES {
         logs.remove(0);
@@ -247,7 +252,7 @@ fn request_clean_stop(child: &mut Child) -> bool {
     false
 }
 
-fn stop_or_kill(child: &mut Child) {
+pub(crate) fn stop_or_kill(child: &mut Child) {
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(b"stop\n");
         let _ = stdin.flush();
@@ -276,7 +281,7 @@ fn ensure_port_available(port: u16) -> Result<(), ServerTestFailure> {
         })
 }
 
-fn loopback_connects(port: u16) -> bool {
+pub(crate) fn loopback_connects(port: u16) -> bool {
     TcpStream::connect_timeout(
         &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
         Duration::from_secs(3),
@@ -284,7 +289,7 @@ fn loopback_connects(port: u16) -> bool {
     .is_ok()
 }
 
-fn redact_line(line: &str, runtime_directory: &std::path::Path) -> String {
+pub(crate) fn redact_line(line: &str, runtime_directory: &std::path::Path) -> String {
     let redacted = line.replace(
         runtime_directory.to_string_lossy().as_ref(),
         "[managed-runtime]",
@@ -296,6 +301,18 @@ fn redact_line(line: &str, runtime_directory: &std::path::Path) -> String {
         "[redacted server log line]".to_string()
     } else {
         redacted.chars().take(500).collect()
+    }
+}
+
+impl ReadinessSignals {
+    pub(crate) fn observe(&mut self, line: &str) {
+        self.paper |= line.contains("Done (") && line.contains("For help, type \"help\"");
+        self.plugin |= line.contains("BadgerBots Sheep City runtime loaded");
+        self.bridge |= line.contains("Authenticated BadgerBots Host bridge is ready");
+    }
+
+    pub(crate) fn complete(&self) -> bool {
+        self.paper && self.plugin && self.bridge
     }
 }
 

@@ -10,7 +10,7 @@ use std::{
 const PAPER_URL: &str = "https://fill-data.papermc.io/v1/objects/5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba/paper-1.21.11-132.jar";
 pub const PAPER_SHA256: &str = "5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba";
 const PAPER_VERSION: &str = "Paper 1.21.11 build 132";
-const PLUGIN_VERSION: &str = "BadgerBots Paper plugin 0.5.0-prototype";
+const PLUGIN_VERSION: &str = "BadgerBots Paper plugin 0.6.0-prototype";
 const MAX_PAPER_BYTES: u64 = 80 * 1024 * 1024;
 const EMBEDDED_PLUGIN: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/badgerbots-paper-plugin.jar"));
@@ -102,7 +102,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.5.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.6.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
