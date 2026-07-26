@@ -309,6 +309,12 @@ export function sanitizeDiagnosticText(value: string): string {
     .slice(0, 500);
 }
 
+export function hostErrorMessage(reason: unknown, fallback: string): string {
+  if (reason instanceof Error && reason.message.trim()) return reason.message.trim();
+  if (typeof reason === "string" && reason.trim()) return reason.trim();
+  return fallback;
+}
+
 function diagnostic(
   code: string,
   message: string,

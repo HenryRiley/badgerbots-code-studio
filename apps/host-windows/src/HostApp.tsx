@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   canStartServer,
+  hostErrorMessage,
   type HostOnboardingView,
   type HostSnapshot,
   type InstructorProfile,
@@ -36,7 +37,7 @@ export function HostApp() {
 
   useEffect(() => {
     void refresh().catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : "Host state could not be loaded.");
+      setError(hostErrorMessage(reason, "Host state could not be loaded."));
     });
   }, []);
 
@@ -46,7 +47,7 @@ export function HostApp() {
     try {
       setMessage(await work());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Host setup could not continue.");
+      setError(hostErrorMessage(reason, "Host setup could not continue."));
     } finally {
       setBusy(false);
     }

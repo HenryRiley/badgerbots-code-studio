@@ -4,6 +4,7 @@ import {
   canStartServer,
   completeSetupStep,
   createInitialHostSnapshot,
+  hostErrorMessage,
   requestServerTransition,
   sanitizeDiagnosticText,
   validateHostServiceInput,
@@ -113,5 +114,15 @@ describe("Host setup and server safety model", () => {
       "Use the bare HTTPS Supabase Project URL.",
       "Use the browser-safe Supabase Publishable key.",
     ]);
+  });
+
+  it("preserves actionable native command errors", () => {
+    expect(hostErrorMessage("Instructor sign-in failed.", "Fallback")).toBe(
+      "Instructor sign-in failed.",
+    );
+    expect(hostErrorMessage(new Error("Network unavailable."), "Fallback")).toBe(
+      "Network unavailable.",
+    );
+    expect(hostErrorMessage({ message: "untrusted shape" }, "Fallback")).toBe("Fallback");
   });
 });
