@@ -1,9 +1,11 @@
+use crate::world_backup::{self, WorldBackupReport};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -47,11 +49,15 @@ pub struct ServerLaunch {
 #[derive(Clone)]
 pub struct RuntimeStore {
     directory: PathBuf,
+    world_operations: Arc<Mutex<()>>,
 }
 
 impl RuntimeStore {
     pub fn new(directory: PathBuf) -> Self {
-        Self { directory }
+        Self {
+            directory,
+            world_operations: Arc::new(Mutex::new(())),
+        }
     }
 
     pub fn configure(
@@ -102,7 +108,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.6.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.7.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
@@ -220,6 +226,39 @@ impl RuntimeStore {
             bridge_directory: self.directory.join("bridge"),
             configuration,
         })
+    }
+
+    pub fn create_world_backup(&self) -> Result<WorldBackupReport, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        world_backup::create(&self.directory)
+    }
+
+    pub fn verify_latest_world_backup(&self) -> Result<WorldBackupReport, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        world_backup::verify_latest(&self.directory)
+    }
+
+    pub fn restore_latest_world_backup(&self) -> Result<WorldBackupReport, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        world_backup::restore_latest(&self.directory)
+    }
+
+    pub fn backup_and_reset_sheep_city(&self) -> Result<WorldBackupReport, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        let report = world_backup::create(&self.directory)?;
+        world_backup::reset_sheep_city(&self.directory).map(|()| report)
     }
 
     fn verify_configuration_backup(&self) -> Result<(), String> {

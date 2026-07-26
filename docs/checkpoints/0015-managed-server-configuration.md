@@ -1,6 +1,7 @@
 # Checkpoint 15: managed server configuration
 
-Status: graphical configuration, artifacts, firewall, test-server, and managed-lifecycle slices implemented;
+Status: graphical configuration, artifacts, firewall, test-server, managed-lifecycle, and
+world-recovery slices implemented;
 physical Windows verification remains required
 
 ## Working in the repository
@@ -36,6 +37,12 @@ physical Windows verification remains required
   an unresponsive child from hanging the Host forever.
 - Unexpected Paper exit moves Host to Failed and requires **Verify and recover** before restart.
   Windows sleep prevention is active only while Paper is ready.
+- Start creates and verifies a checksummed managed-world snapshot before launching Paper.
+- The Recovery panel provides functional **Back up now**, **Restore latest**, and **Reset Sheep
+  City** controls while Paper is stopped.
+- Restore stages and verifies all files before replacing fixed managed world roots. Reset backs up
+  first and removes only Sheep City so the original plugin-owned prototype regenerates next start.
+- At most five operational snapshots, 100,000 files, and 4 GiB per snapshot are accepted.
 
 ## Automated evidence
 
@@ -46,12 +53,14 @@ physical Windows verification remains required
 - Rust tests cover required Paper/plugin/bridge readiness signals and server-log redaction.
 - Rust tests cover supervisor state updates, crash recovery requirement, and the 80-line console
   bound.
+- Rust tests cover backup creation, exact manifest verification, tamper refusal, restore, and
+  Sheep City-only reset.
 - Host TypeScript, Rust, formatting, lint, and production-build checks remain part of repository
   verification.
 
 ## Manual Windows verification
 
-1. Install BadgerBots Host 0.6.0 over the existing build and launch it from Start.
+1. Install BadgerBots Host 0.7.0 over the existing build and launch it from Start.
 2. Continue the retained setup. At Step 4, enter the exact teacher Minecraft Java username.
 3. Keep port `25565` and `4 GiB` unless the local environment requires another non-privileged port.
 4. Open and accept the Minecraft EULA, then select **Prepare server**.
@@ -89,12 +98,23 @@ physical Windows verification remains required
     Failed, reports an unclean exit, blocks Start, and **Verify and recover** returns it to Stopped.
 23. During Running, confirm Windows does not automatically sleep. After Stop, confirm the normal
     power policy resumes.
+24. With Paper stopped, select **Back up now**. Confirm the status becomes Verified, snapshot count
+    increases, and latest size is nonzero.
+25. Start Minecraft, visibly change Sheep City and the teacher world, stop cleanly, then select
+    **Restore latest** and accept the warning. Start again and confirm both worlds match the
+    snapshot.
+26. Stop, select **Reset Sheep City**, accept the warning, and start again. Confirm Sheep City
+    regenerates while the teacher world remains unchanged. Restore latest and confirm the
+    pre-reset Sheep City returns.
+27. Create more than five backups and confirm the displayed retained count stays at five.
+28. Copy and alter a file inside the newest backup on a disposable test installation. Confirm
+    Restore fails with a SHA-256 error and current worlds remain untouched.
 
 ## Not yet claimed
 
-- Host does not yet provide a verified world backup/restore flow, managed Java distribution,
-  firewall repair/removal, or signed update/repair behavior.
+- Host does not yet provide an encrypted/compressed final-retention export, managed Java
+  distribution, firewall repair/removal, or signed update/repair behavior.
 - Hard-killing Host itself or losing power still requires a physical orphan-process and world
   integrity drill.
 - The Java 21 runtime is version-probed but not yet a privately managed checksummed distribution.
-- Checkpoint 15 continues with world backup/recovery, managed Java, and repair/uninstall behavior.
+- Checkpoint 15 continues with managed Java and repair/uninstall behavior.

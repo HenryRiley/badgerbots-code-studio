@@ -10,7 +10,8 @@ export const SETUP_STEP_IDS = [
 
 export type SetupStepId = (typeof SETUP_STEP_IDS)[number];
 export type CheckStatus = "pending" | "ready" | "warning" | "blocked";
-export type ServerLifecycle = "stopped" | "starting" | "running" | "stopping" | "failed";
+export type ServerLifecycle =
+  "stopped" | "starting" | "running" | "stopping" | "maintenance" | "failed";
 
 export interface SetupStep {
   id: SetupStepId;
@@ -63,6 +64,11 @@ export interface HostSnapshot {
   backup: {
     status: "never" | "verified" | "failed";
     lastVerifiedAt?: string;
+    latestId?: string;
+    backupCount: number;
+    totalBytes: number;
+    lastAction?: string;
+    operation?: string;
   };
   update: {
     status: "not_checked" | "current" | "available" | "blocked";
@@ -217,7 +223,7 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
       lastExit: "unknown",
       recoveryRequired: false,
     },
-    backup: { status: "never" },
+    backup: { status: "never", backupCount: 0, totalBytes: 0 },
     update: { status: "not_checked", channel: "internal" },
     pendingOutboundMessages: 0,
     diagnostics: [
@@ -268,7 +274,6 @@ export function canStartServer(snapshot: HostSnapshot): { allowed: boolean; reas
     reasons.push("Readiness checks are incomplete or blocked.");
   if (snapshot.artifacts.some((artifact) => artifact.status !== "verified"))
     reasons.push("Managed Java, Paper, and plugin artifacts are not verified.");
-  if (snapshot.backup.status !== "verified") reasons.push("No verified recovery backup exists.");
   if (snapshot.server.recoveryRequired) reasons.push("Crash recovery must finish before restart.");
   return { allowed: reasons.length === 0, reasons };
 }

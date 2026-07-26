@@ -180,7 +180,7 @@ export function HostApp() {
               <h2>{titleCase(snapshot.server.lifecycle)}</h2>
               <p>
                 {snapshot.setupSteps.at(-1)?.status === "complete"
-                  ? "Readiness test stopped cleanly"
+                  ? "Verified backup runs automatically before each normal start"
                   : "Waiting for the guided readiness test"}
               </p>
             </div>
@@ -219,6 +219,11 @@ export function HostApp() {
           {snapshot.server.lifecycle === "stopping" ? (
             <button type="button" className="locked-button" disabled>
               Stopping safely…
+            </button>
+          ) : null}
+          {snapshot.server.lifecycle === "maintenance" ? (
+            <button type="button" className="locked-button" disabled>
+              Verifying world files…
             </button>
           ) : null}
           {snapshot.server.lifecycle === "failed" ? (
@@ -336,13 +341,21 @@ export function HostApp() {
             </div>
           </dl>
         </article>
-        <article className="panel compact-panel">
+        <article className="panel compact-panel backup-panel">
           <p className="eyebrow">Recovery</p>
-          <h2>Backup & restart</h2>
+          <h2>World backup & restore</h2>
           <dl>
             <div>
               <dt>Verified backup</dt>
               <dd>{titleCase(snapshot.backup.status)}</dd>
+            </div>
+            <div>
+              <dt>Retained snapshots</dt>
+              <dd>{snapshot.backup.backupCount}/5</dd>
+            </div>
+            <div>
+              <dt>Latest size</dt>
+              <dd>{formatBytes(snapshot.backup.totalBytes)}</dd>
             </div>
             <div>
               <dt>Last server exit</dt>
@@ -353,6 +366,82 @@ export function HostApp() {
               <dd>{snapshot.server.recoveryRequired ? "Yes" : "No"}</dd>
             </div>
           </dl>
+          <p className="backup-note">
+            {snapshot.backup.lastAction === "sheep-city-reset-pending"
+              ? "Sheep City reset is pending. Start the server to regenerate it; Restore latest remains available."
+              : "Controls unlock only while Paper is stopped. Restore and reset always verify SHA-256 evidence before replacing a working world."}
+          </p>
+          <div className="backup-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={
+                busy ||
+                snapshot.server.lifecycle !== "stopped" ||
+                completed !== 7 ||
+                snapshot.backup.lastAction === "sheep-city-reset-pending"
+              }
+              onClick={() =>
+                void perform(async () => {
+                  setMessage("Copying and verifying managed world files…");
+                  setSnapshot(await gateway.createWorldBackup());
+                  return "Managed worlds were backed up and verified.";
+                })
+              }
+            >
+              Back up now
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={
+                busy ||
+                snapshot.server.lifecycle !== "stopped" ||
+                snapshot.backup.status !== "verified" ||
+                !snapshot.backup.latestId
+              }
+              onClick={() =>
+                void perform(async () => {
+                  if (
+                    !window.confirm(
+                      "Restore the latest verified backup? Current managed worlds will be replaced.",
+                    )
+                  )
+                    return "Restore cancelled.";
+                  setMessage("Verifying and restoring the latest managed-world snapshot…");
+                  setSnapshot(await gateway.restoreLatestWorldBackup());
+                  return "The latest verified world backup was restored.";
+                })
+              }
+            >
+              Restore latest
+            </button>
+            <button
+              type="button"
+              className="reset-button"
+              disabled={
+                busy ||
+                snapshot.server.lifecycle !== "stopped" ||
+                completed !== 7 ||
+                snapshot.backup.lastAction === "sheep-city-reset-pending"
+              }
+              onClick={() =>
+                void perform(async () => {
+                  if (
+                    !window.confirm(
+                      "Reset Sheep City? Host will first create a verified backup, then regenerate Sheep City on the next server start.",
+                    )
+                  )
+                    return "Sheep City reset cancelled.";
+                  setMessage("Creating a recovery snapshot before resetting Sheep City…");
+                  setSnapshot(await gateway.resetSheepCityWorld());
+                  return "Sheep City will regenerate on the next server start.";
+                })
+              }
+            >
+              Reset Sheep City
+            </button>
+          </div>
         </article>
         <article className="panel diagnostics-panel">
           <div className="panel-heading">
@@ -888,6 +977,13 @@ function OnboardingWizard(props: {
       )}
     </section>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "None";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
 }
 
 function titleCase(value: string): string {

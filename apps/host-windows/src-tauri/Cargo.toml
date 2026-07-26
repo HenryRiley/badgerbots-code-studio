@@ -1,6 +1,6 @@
 [package]
 name = "badgerbots-host"
-version = "0.6.0"
+version = "0.7.0"
 description = "BadgerBots Host teacher-laptop application"
 authors = ["BadgerBots"]
 edition = "2024"
