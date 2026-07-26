@@ -1,12 +1,17 @@
 # BadgerBots Host
 
-BadgerBots Host is the installed teacher-laptop application. Checkpoint 14 turns its first setup
-gates into a native workflow: service configuration, instructor sign-in, owner
-organization/location selection, Host pairing, Windows-protected credential persistence, and
-platform/RAM readiness probing now work inside the app without PowerShell or configuration files.
+BadgerBots Host is the installed teacher-laptop application. Its native first-run workflow covers
+service configuration, instructor sign-in, owner organization/location selection, Host pairing,
+Windows-protected credential persistence, platform/RAM readiness probing, and managed Minecraft
+server configuration without PowerShell or configuration-file editing.
 
-It does **not** yet start Paper, change the Windows firewall, prevent sleep, acquire managed
-artifacts, create backups, or install an update. Those controls remain visibly locked until their
+Step 4 asks for the exact teacher Minecraft Java username, server port, memory limit, and explicit
+Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomically creates a private
+application-local runtime directory with restricted server settings. It never globally changes
+Java or an existing Minecraft server.
+
+It does **not** yet download or start Paper, change the Windows firewall, prevent sleep, acquire the
+plugin, create backups, or install an update. Those controls remain visibly locked until their
 verified native implementations exist.
 
 ## Browser preview
@@ -27,6 +32,11 @@ The native shell stores non-secret setup/status data under the application-local
 using atomic replacement. The instructor password and Auth session remain memory-only. On Windows,
 the Host pairing credential is encrypted with current-user DPAPI before atomic persistence and is
 never returned to the webview.
+
+The managed Minecraft runtime is stored below the same application-local data root in
+`minecraft-runtime`. Host writes `eula.txt`, `server.properties`, and
+`badgerbots-runtime.json`; it also prepares private plugin, bridge, and backup directories. The
+teacher username is metadata and is never used as a file path.
 
 Production installer builds should set the public repository variables
 `BADGERBOTS_SUPABASE_URL` and `BADGERBOTS_SUPABASE_PUBLISHABLE_KEY`; CI maps them to Vite build

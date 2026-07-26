@@ -8,6 +8,7 @@ import {
   requestServerTransition,
   sanitizeDiagnosticText,
   validateHostServiceInput,
+  validateServerConfiguration,
   type HostSnapshot,
 } from "./domain.js";
 
@@ -113,6 +114,30 @@ describe("Host setup and server safety model", () => {
     ).toEqual([
       "Use the bare HTTPS Supabase Project URL.",
       "Use the browser-safe Supabase Publishable key.",
+    ]);
+  });
+
+  it("validates the managed Minecraft server form before native setup", () => {
+    expect(
+      validateServerConfiguration({
+        teacherUsername: "Teacher_01",
+        serverPort: 25565,
+        maxHeapGib: 4,
+        eulaAccepted: true,
+      }),
+    ).toEqual([]);
+    expect(
+      validateServerConfiguration({
+        teacherUsername: "../teacher",
+        serverPort: 80,
+        maxHeapGib: 16,
+        eulaAccepted: false,
+      }),
+    ).toEqual([
+      "Enter the teacher’s exact 3–16 character Minecraft Java username.",
+      "Choose a Minecraft port between 1024 and 65535.",
+      "Choose a server memory limit of 2, 4, 6, or 8 GiB.",
+      "Read and accept the Minecraft EULA before preparing the server.",
     ]);
   });
 

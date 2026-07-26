@@ -96,6 +96,26 @@ export interface SignInResult {
   profile: InstructorProfile;
 }
 
+export interface ServerConfigurationInput {
+  teacherUsername: string;
+  serverPort: number;
+  maxHeapGib: number;
+  eulaAccepted: boolean;
+}
+
+export function validateServerConfiguration(input: ServerConfigurationInput): string[] {
+  const errors: string[] = [];
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(input.teacherUsername.trim()))
+    errors.push("Enter the teacher’s exact 3–16 character Minecraft Java username.");
+  if (!Number.isInteger(input.serverPort) || input.serverPort < 1024 || input.serverPort > 65535)
+    errors.push("Choose a Minecraft port between 1024 and 65535.");
+  if (![2, 4, 6, 8].includes(input.maxHeapGib))
+    errors.push("Choose a server memory limit of 2, 4, 6, or 8 GiB.");
+  if (!input.eulaAccepted)
+    errors.push("Read and accept the Minecraft EULA before preparing the server.");
+  return errors;
+}
+
 export function validateHostServiceInput(input: {
   serviceUrl: string;
   publishableKey: string;
