@@ -75,6 +75,13 @@ protect/unprotect and builds the NSIS installer with optional public service con
 Physical Windows evidence must prove restart persistence, no plaintext credential, assistant
 denial, no console window, and the native platform/RAM probe.
 
+Checkpoint 15 adds graphical server configuration, immutable Paper object/checksum enforcement,
+embedded-plugin fail-closed behavior, atomic artifact writes, configuration recovery evidence, and
+pure firewall-policy tests. Windows CI builds the exact plugin before compiling the Host installer.
+Physical Windows evidence must verify the download, UAC cancellation/success paths, Private-only
+TCP rule, restart persistence, and absence of a console window. CI does not exercise an elevated
+firewall mutation.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

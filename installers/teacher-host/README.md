@@ -6,9 +6,10 @@ The pull-request workflow builds an **unsigned internal prototype**, records its
 
 The current installer contains the real native classroom onboarding flow. In a build configured
 with the public repository variables, an instructor can sign in, select a location, pair the
-laptop, persist its DPAPI-protected Host credential, and run native platform/RAM checks without a
-terminal. It does not yet bundle Java, Paper, the plugin, or a world, and it does not create a
-firewall rule.
+laptop, persist its DPAPI-protected Host credential, run native platform/RAM checks, download and
+verify pinned Paper, install the CI-built BadgerBots plugin, and approve a scoped Private-network
+firewall rule without a terminal. It does not bundle Java, Paper, or a final world. It does not yet
+launch the test server or prove firewall repair/removal.
 
 ## Retrieving a CI prototype
 

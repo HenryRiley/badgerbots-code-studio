@@ -30,6 +30,8 @@ export interface HostGateway {
   signOut(): Promise<HostOnboardingView>;
   probeHardware(): Promise<HostSnapshot>;
   configureServer(input: ServerConfigurationInput): Promise<HostSnapshot>;
+  prepareRuntimeArtifacts(): Promise<HostSnapshot>;
+  approveFirewall(): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
   transition(
     action: "start" | "mark_running" | "stop" | "mark_stopped" | "crash",
@@ -129,6 +131,31 @@ export function createHostGateway(): HostGateway {
       );
       return Promise.resolve(structuredClone(snapshot));
     },
+    prepareRuntimeArtifacts: () => {
+      snapshot = {
+        ...snapshot,
+        artifacts: snapshot.artifacts.map((artifact) => ({
+          ...artifact,
+          status: "verified",
+          version:
+            artifact.id === "java"
+              ? "openjdk version 21 (preview)"
+              : artifact.id === "paper"
+                ? "Paper 1.21.11 build 132"
+                : "BadgerBots Paper plugin 0.4.0-prototype",
+          checksum: artifact.id === "java" ? "system-version-probe" : "a".repeat(64),
+        })),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    approveFirewall: () => {
+      snapshot = completeSetupStep(
+        snapshot,
+        "firewall_approval",
+        "Preview of Windows Private-network TCP approval.",
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
     completeStep: (stepId, detail) => {
       snapshot = completeSetupStep(snapshot, stepId, detail);
       return Promise.resolve(structuredClone(snapshot));
@@ -165,6 +192,8 @@ const nativeGateway: HostGateway = {
       maxHeapGib: input.maxHeapGib,
       eulaAccepted: input.eulaAccepted,
     }),
+  prepareRuntimeArtifacts: () => invoke<HostSnapshot>("prepare_runtime_artifacts"),
+  approveFirewall: () => invoke<HostSnapshot>("approve_minecraft_firewall"),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
   transition: (action) => invoke<HostSnapshot>("transition_server", { action }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),

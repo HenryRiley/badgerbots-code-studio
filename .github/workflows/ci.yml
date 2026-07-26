@@ -122,6 +122,12 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
 
+      - name: Install Java 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install pinned Rust toolchain
         shell: pwsh
         run: |
@@ -131,6 +137,13 @@ jobs:
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build plugin for the Host installer
+        shell: pwsh
+        run: |
+          .\minecraft\paper-plugin\gradlew.bat --no-daemon check jar
+          New-Item -ItemType Directory -Force apps/host-windows/src-tauri/bundled | Out-Null
+          Copy-Item minecraft/paper-plugin/build/libs/badgerbots-paper-plugin.jar apps/host-windows/src-tauri/bundled/badgerbots-paper-plugin.jar
 
       - name: Test native Host core
         run: cargo test --manifest-path apps/host-windows/src-tauri/Cargo.toml --locked
