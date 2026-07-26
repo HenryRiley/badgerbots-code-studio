@@ -43,6 +43,7 @@ pub struct OnboardingView {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Membership {
+    #[serde(alias = "organization_id")]
     pub organization_id: String,
     pub role: String,
 }
@@ -57,6 +58,7 @@ pub struct Organization {
 #[serde(rename_all = "camelCase")]
 pub struct Location {
     pub id: String,
+    #[serde(alias = "organization_id")]
     pub organization_id: String,
     pub name: String,
 }
@@ -626,6 +628,22 @@ mod tests {
         assert!(validate_publishable_key("sb_publishable_example-key-long-enough").is_ok());
         assert!(validate_publishable_key("sb_secret_do-not-store-this-here").is_err());
         assert!(validate_publishable_key("service-role-value").is_err());
+    }
+
+    #[test]
+    fn accepts_the_existing_profile_api_field_names() {
+        let profile = serde_json::from_value::<InstructorProfile>(json!({
+            "memberships": [{ "organization_id": "organization-1", "role": "owner" }],
+            "organizations": [{ "id": "organization-1", "name": "BadgerBots" }],
+            "locations": [{
+                "id": "location-1",
+                "organization_id": "organization-1",
+                "name": "Madison"
+            }]
+        }))
+        .unwrap();
+        assert_eq!(profile.memberships[0].organization_id, "organization-1");
+        assert_eq!(profile.locations[0].organization_id, "organization-1");
     }
 
     #[cfg(windows)]
