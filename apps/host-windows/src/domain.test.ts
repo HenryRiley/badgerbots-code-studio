@@ -24,7 +24,13 @@ function readySnapshot(): HostSnapshot {
       version: "test-version",
       checksum: "a".repeat(64),
     })),
-    backup: { status: "verified", lastVerifiedAt: "2026-07-23T00:00:00.000Z" },
+    backup: {
+      status: "verified",
+      lastVerifiedAt: "2026-07-23T00:00:00.000Z",
+      latestId: "world-test",
+      backupCount: 1,
+      totalBytes: 8192,
+    },
   };
 }
 
@@ -37,7 +43,6 @@ describe("Host setup and server safety model", () => {
         "First-run setup is incomplete.",
         "Readiness checks are incomplete or blocked.",
         "Managed Java, Paper, and plugin artifacts are not verified.",
-        "No verified recovery backup exists.",
       ],
     });
   });

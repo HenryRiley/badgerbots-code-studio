@@ -12,6 +12,7 @@ mod power;
 mod runtime;
 mod server_manager;
 mod server_test;
+mod world_backup;
 
 use firewall::approve_private_minecraft_port;
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
@@ -75,6 +76,16 @@ struct ServerState {
 struct BackupState {
     status: String,
     last_verified_at: Option<String>,
+    #[serde(default)]
+    latest_id: Option<String>,
+    #[serde(default)]
+    backup_count: usize,
+    #[serde(default)]
+    total_bytes: u64,
+    #[serde(default)]
+    last_action: Option<String>,
+    #[serde(default)]
+    operation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,7 +128,7 @@ impl HostStore {
             .unwrap_or_else(initial_snapshot);
         if matches!(
             snapshot.server.lifecycle.as_str(),
-            "starting" | "running" | "stopping"
+            "starting" | "running" | "stopping" | "maintenance"
         ) {
             snapshot.server.lifecycle = "failed".to_string();
             snapshot.server.active_camp = false;
@@ -130,6 +141,14 @@ impl HostStore {
                 "Host reopened after an incomplete server lifecycle. Review recovery before restarting.",
                 "warning",
             );
+        }
+        if snapshot.backup.latest_id.is_none() {
+            snapshot.backup.status = "never".to_string();
+            snapshot.backup.last_verified_at = None;
+            snapshot.backup.backup_count = 0;
+            snapshot.backup.total_bytes = 0;
+            snapshot.backup.last_action = None;
+            snapshot.backup.operation = None;
         }
         Self {
             path,
@@ -630,13 +649,6 @@ async fn test_minecraft_server(
                     ),
                 },
             );
-            snapshot.backup.status = "verified".to_string();
-            snapshot.backup.last_verified_at = Some(format!(
-                "unix-{}",
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |duration| duration.as_secs())
-            ));
             push_diagnostic(
                 &mut snapshot,
                 "SERVER_TEST_PASSED",
@@ -675,8 +687,8 @@ async fn start_minecraft_server(
     if manager.is_active() {
         return Err("The managed Minecraft server is already active.".to_string());
     }
-    {
-        let snapshot = host
+    let sheep_city_reset_pending = {
+        let mut snapshot = host
             .snapshot
             .lock()
             .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
@@ -702,9 +714,6 @@ async fn start_minecraft_server(
         {
             blockers.push("Verify all managed server artifacts.");
         }
-        if snapshot.backup.status != "verified" {
-            blockers.push("Verify the recovery copy.");
-        }
         if snapshot.server.recovery_required {
             blockers.push("Complete crash recovery.");
         }
@@ -714,27 +723,58 @@ async fn start_minecraft_server(
         if !blockers.is_empty() {
             return Err(blockers.join(" "));
         }
-    }
-
-    let prepared = runtime.prepare_artifacts().await?;
-    let launch = runtime.verified_server_launch()?;
-    {
-        let mut snapshot = host
-            .snapshot
-            .lock()
-            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
-        apply_prepared_artifacts(&mut snapshot, &prepared);
+        let reset_pending =
+            snapshot.backup.last_action.as_deref() == Some("sheep-city-reset-pending");
         snapshot.server.lifecycle = "starting".to_string();
         snapshot.server.active_camp = false;
         snapshot.server.sleep_inhibition = "requested".to_string();
         snapshot.server.last_exit = "unknown".to_string();
-        snapshot.server_logs = vec!["[Host] Starting the managed classroom server…".to_string()];
+        snapshot.server_logs =
+            vec!["[Host] Verifying an automatic world backup before startup…".to_string()];
         push_diagnostic(
             &mut snapshot,
             "SERVER_START_REQUESTED",
             "The instructor requested a managed classroom server start.",
             "info",
         );
+        host.persist(&snapshot)?;
+        reset_pending
+    };
+    let _ = app.emit("host-server-update", ());
+
+    let prepared = runtime.prepare_artifacts().await.inspect_err(|message| {
+        record_start_preflight_failure(&host, message, false);
+    })?;
+    let backup = (if sheep_city_reset_pending {
+        runtime.verify_latest_world_backup()
+    } else {
+        runtime.create_world_backup()
+    })
+    .inspect_err(|message| {
+        record_start_preflight_failure(&host, message, true);
+    })?;
+    let launch = runtime.verified_server_launch().inspect_err(|message| {
+        record_start_preflight_failure(&host, message, false);
+    })?;
+    {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        apply_prepared_artifacts(&mut snapshot, &prepared);
+        apply_backup_report(
+            &mut snapshot,
+            &backup,
+            if sheep_city_reset_pending {
+                "verified-before-sheep-city-regeneration"
+            } else {
+                "automatic-before-start"
+            },
+            !sheep_city_reset_pending,
+        );
+        snapshot
+            .server_logs
+            .push("[Host] Backup verified. Starting Paper…".to_string());
         host.persist(&snapshot)?;
     }
     if let Err(message) = manager.start(launch, app) {
@@ -751,6 +791,24 @@ async fn start_minecraft_server(
         return Err(message);
     }
     host_snapshot(host)
+}
+
+fn record_start_preflight_failure(host: &HostStore, message: &str, backup_failed: bool) {
+    if let Ok(mut snapshot) = host.snapshot.lock() {
+        snapshot.server.lifecycle = "stopped".to_string();
+        snapshot.server.active_camp = false;
+        snapshot.server.sleep_inhibition = "inactive".to_string();
+        if backup_failed {
+            snapshot.backup.status = "failed".to_string();
+        }
+        push_diagnostic(
+            &mut snapshot,
+            "SERVER_START_PREFLIGHT_FAILED",
+            message,
+            "error",
+        );
+        let _ = host.persist(&snapshot);
+    }
 }
 
 #[tauri::command]
@@ -797,13 +855,40 @@ async fn recover_minecraft_server(
             return Err("Server recovery is not currently required.".to_string());
         }
     }
+    let interrupted_operation = {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        snapshot.backup.operation.clone()
+    };
     let prepared = runtime.prepare_artifacts().await?;
+    let backup = match interrupted_operation.as_deref() {
+        Some("restore-in-progress" | "reset-in-progress") => {
+            runtime.restore_latest_world_backup()?
+        }
+        Some("backup-in-progress") => runtime.create_world_backup()?,
+        _ => runtime.verify_latest_world_backup()?,
+    };
     runtime.verified_server_launch()?;
     let mut snapshot = host
         .snapshot
         .lock()
         .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
     apply_prepared_artifacts(&mut snapshot, &prepared);
+    apply_backup_report(
+        &mut snapshot,
+        &backup,
+        if matches!(
+            interrupted_operation.as_deref(),
+            Some("restore-in-progress" | "reset-in-progress")
+        ) {
+            "restored-after-interrupted-maintenance"
+        } else {
+            "verified-after-crash"
+        },
+        interrupted_operation.as_deref() == Some("backup-in-progress"),
+    );
     snapshot.server.lifecycle = "stopped".to_string();
     snapshot.server.active_camp = false;
     snapshot.server.sleep_inhibition = "inactive".to_string();
@@ -816,6 +901,157 @@ async fn recover_minecraft_server(
     );
     host.persist(&snapshot)?;
     Ok(snapshot.clone())
+}
+
+#[tauri::command]
+fn create_world_backup(
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    begin_world_maintenance(&manager, &host, false, "backup-in-progress")?;
+    let report = runtime.create_world_backup().inspect_err(|message| {
+        end_failed_world_maintenance(&host, message, true);
+    })?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    snapshot.server.lifecycle = "stopped".to_string();
+    apply_backup_report(&mut snapshot, &report, "manual-backup", true);
+    push_diagnostic(
+        &mut snapshot,
+        "WORLD_BACKUP_VERIFIED",
+        "A checksummed managed-world backup was created and verified.",
+        "info",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+#[tauri::command]
+fn restore_latest_world_backup(
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    begin_world_maintenance(&manager, &host, true, "restore-in-progress")?;
+    let report = runtime
+        .restore_latest_world_backup()
+        .inspect_err(|message| {
+            end_failed_world_maintenance(&host, message, false);
+        })?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    snapshot.server.lifecycle = "stopped".to_string();
+    apply_backup_report(&mut snapshot, &report, "restored-latest", false);
+    snapshot.server.last_exit = "clean".to_string();
+    snapshot.server.recovery_required = false;
+    push_diagnostic(
+        &mut snapshot,
+        "WORLD_BACKUP_RESTORED",
+        "The latest verified managed-world backup was restored atomically.",
+        "warning",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+#[tauri::command]
+fn reset_sheep_city_world(
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    begin_world_maintenance(&manager, &host, false, "reset-in-progress")?;
+    let report = runtime
+        .backup_and_reset_sheep_city()
+        .inspect_err(|message| {
+            end_failed_world_maintenance(&host, message, true);
+        })?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    snapshot.server.lifecycle = "stopped".to_string();
+    apply_backup_report(&mut snapshot, &report, "sheep-city-reset-pending", true);
+    push_diagnostic(
+        &mut snapshot,
+        "SHEEP_CITY_RESET",
+        "Sheep City was reset after a verified recovery backup. Paper will regenerate it on next start.",
+        "warning",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+fn begin_world_maintenance(
+    manager: &ServerManager,
+    host: &HostStore,
+    allow_pending_reset: bool,
+    action: &str,
+) -> Result<(), String> {
+    if manager.is_active() {
+        return Err("Stop Paper before changing managed world files.".to_string());
+    }
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    if snapshot.server.lifecycle != "stopped" {
+        return Err(
+            "World backup, restore, and reset require a cleanly stopped server.".to_string(),
+        );
+    }
+    if snapshot
+        .setup_steps
+        .iter()
+        .any(|step| step.status != "complete")
+    {
+        return Err("Complete the graphical server test before managing worlds.".to_string());
+    }
+    if !allow_pending_reset
+        && snapshot.backup.last_action.as_deref() == Some("sheep-city-reset-pending")
+    {
+        return Err(
+            "Start and stop the server to regenerate Sheep City before creating another backup or reset."
+                .to_string(),
+        );
+    }
+    snapshot.server.lifecycle = "maintenance".to_string();
+    snapshot.backup.operation = Some(action.to_string());
+    host.persist(&snapshot)
+}
+
+fn end_failed_world_maintenance(host: &HostStore, message: &str, backup_failed: bool) {
+    if let Ok(mut snapshot) = host.snapshot.lock() {
+        snapshot.server.lifecycle = "stopped".to_string();
+        if backup_failed {
+            snapshot.backup.status = "failed".to_string();
+        }
+        snapshot.backup.operation = None;
+        push_diagnostic(&mut snapshot, "WORLD_MAINTENANCE_FAILED", message, "error");
+        let _ = host.persist(&snapshot);
+    }
+}
+
+fn apply_backup_report(
+    snapshot: &mut HostSnapshot,
+    report: &world_backup::WorldBackupReport,
+    action: &str,
+    created: bool,
+) {
+    snapshot.backup.status = "verified".to_string();
+    snapshot.backup.last_verified_at = Some(report.created_at.clone());
+    snapshot.backup.latest_id = Some(report.backup_id.clone());
+    if created {
+        snapshot.backup.backup_count = snapshot.backup.backup_count.saturating_add(1).min(5);
+    }
+    snapshot.backup.total_bytes = report.total_bytes;
+    snapshot.backup.last_action = Some(action.to_string());
+    snapshot.backup.operation = None;
 }
 
 fn apply_prepared_artifacts(snapshot: &mut HostSnapshot, prepared: &runtime::ArtifactPreparation) {
@@ -964,6 +1200,11 @@ fn initial_snapshot() -> HostSnapshot {
         backup: BackupState {
             status: "never".to_string(),
             last_verified_at: None,
+            latest_id: None,
+            backup_count: 0,
+            total_bytes: 0,
+            last_action: None,
+            operation: None,
         },
         update: UpdateState {
             status: "not_checked".to_string(),
@@ -1069,7 +1310,10 @@ pub fn run() {
             test_minecraft_server,
             start_minecraft_server,
             stop_minecraft_server,
-            recover_minecraft_server
+            recover_minecraft_server,
+            create_world_backup,
+            restore_latest_world_backup,
+            reset_sheep_city_world
         ])
         .run(tauri::generate_context!())
         .expect("BadgerBots Host failed to start");

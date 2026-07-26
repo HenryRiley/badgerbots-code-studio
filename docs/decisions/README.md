@@ -21,5 +21,6 @@ Decisions are immutable records. Supersede an accepted decision with a new ADR i
 | [0015](0015-host-artifact-and-firewall-boundary.md)                | Accepted   | Verified Host artifacts and private-network firewall     |
 | [0016](0016-host-paper-smoke-test-lifecycle.md)                    | Accepted   | Bounded graphical Paper readiness smoke test             |
 | [0017](0017-host-managed-paper-lifecycle.md)                       | Accepted   | Managed Paper lifecycle and realtime in-app console      |
+| [0018](0018-host-world-backup-restore-and-reset.md)                | Accepted   | Verified world backup, restore, and Sheep City reset     |
 
 The zero-cost provider decision is accepted for the one-camp pilot only and remains gated by capacity, recovery, privacy, and pre-camp readiness tests. The Minecraft decision remains proposed until its compatibility spike passes.
