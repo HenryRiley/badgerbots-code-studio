@@ -9,7 +9,9 @@ with the public repository variables, an instructor can sign in, select a locati
 laptop, persist its DPAPI-protected Host credential, run native platform/RAM checks, download and
 verify pinned Paper, install the CI-built BadgerBots plugin, and approve a scoped Private-network
 firewall rule without a terminal. It does not bundle Java, Paper, or a final world. It does not yet
-launch the test server or prove firewall repair/removal.
+provide permanent camp server controls or prove firewall repair/removal. Host 0.5.0 does run a
+bounded graphical Paper test and requires Paper, Sheep City plugin, authenticated bridge, loopback
+listener, and clean-shutdown evidence before completing setup.
 
 ## Retrieving a CI prototype
 
@@ -20,4 +22,7 @@ launch the test server or prove firewall repair/removal.
 
 ## Required physical test record
 
-Use `docs/checkpoints/0004-host-application-and-installer.md`. A non-developer must eventually complete sign-in, location, hardware, server configuration, teacher mapping, scoped firewall approval, test server, and Ready without editing configuration files. The present preview cannot pass that acceptance journey.
+Use `docs/checkpoints/0004-host-application-and-installer.md`. A non-developer must complete
+sign-in, location, hardware, server configuration, teacher mapping, scoped firewall approval, test
+server, and Ready without editing configuration files. Browser preview is not acceptance evidence;
+the Host 0.5.0 installer must run the real Paper smoke test on Windows.

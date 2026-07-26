@@ -10,13 +10,15 @@ Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomical
 application-local runtime directory with restricted server settings. It never globally changes
 Java or an existing Minecraft server.
 
-Host 0.4.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
+Host 0.5.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
 Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
 firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
 
-It does **not** yet start Paper, prevent sleep, verify a world backup, remove/repair the firewall
-rule, install a private managed Java distribution, or install an update. Those controls remain
-visibly locked until their verified native implementations exist.
+The final setup step performs a bounded real Paper smoke test: it verifies the Sheep City plugin,
+authenticated local bridge, loopback listener, and clean shutdown while keeping redacted output in
+the built-in console. It does **not** yet provide permanent camp Start/Stop, prevent sleep, verify a
+world backup, remove/repair the firewall rule, install a private managed Java distribution, or
+install an update.
 
 ## Browser preview
 

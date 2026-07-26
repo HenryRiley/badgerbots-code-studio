@@ -70,6 +70,7 @@ export interface HostSnapshot {
   };
   pendingOutboundMessages: number;
   diagnostics: DiagnosticEvent[];
+  serverLogs: string[];
 }
 
 export interface HostOnboardingView {
@@ -222,6 +223,7 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
     diagnostics: [
       diagnostic("HOST_PREVIEW_READY", "Host safety model loaded. Paper controls remain locked."),
     ],
+    serverLogs: [],
   };
 }
 

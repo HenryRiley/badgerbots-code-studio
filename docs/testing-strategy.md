@@ -82,6 +82,12 @@ Physical Windows evidence must verify the download, UAC cancellation/success pat
 TCP rule, restart persistence, and absence of a console window. CI does not exercise an elevated
 firewall mutation.
 
+The Host 0.5.0 slice adds pure detection/redaction tests for Paper, Sheep City plugin, and
+authenticated bridge readiness. Windows CI compiles that process boundary and packages the real
+plugin into the installer. Physical Windows evidence must run the graphical Test server step,
+confirm the built-in bounded log, loopback listener, clean shutdown, persistence, and absence of a
+Java/Command Prompt window. Loopback evidence does not replace a student-device test on camp Wi-Fi.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.
