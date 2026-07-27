@@ -1,9 +1,12 @@
 package org.badgerbots.studio.paper;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Comparator;
 import org.bukkit.GameRules;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 import org.bukkit.WorldType;
@@ -15,6 +18,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /** Creates an original compact prototype layout entirely from vanilla blocks. */
@@ -24,15 +28,19 @@ final class SheepCityWorld implements Listener {
   private final JavaPlugin plugin;
   private final PaperRuntimeGateway gateway;
   private final String teacherUsername;
+  private final NamespacedKey layoutInitializedKey;
   private World world;
 
   SheepCityWorld(JavaPlugin plugin, PaperRuntimeGateway gateway) {
     this.plugin = plugin;
     this.gateway = gateway;
     this.teacherUsername = System.getProperty("badgerbots.teacherUsername", "");
+    this.layoutInitializedKey = new NamespacedKey(plugin, "prototype_layout_initialized");
   }
 
   void create() {
+    Path worldDirectory = plugin.getServer().getWorldContainer().toPath().resolve(WORLD_NAME);
+    boolean existedBeforeLoad = Files.isDirectory(worldDirectory);
     world =
         new WorldCreator(WORLD_NAME)
             .type(WorldType.FLAT)
@@ -49,7 +57,26 @@ final class SheepCityWorld implements Listener {
     for (int chunkX = -1; chunkX <= 1; chunkX++) {
       for (int chunkZ = -1; chunkZ <= 1; chunkZ++) world.getChunkAt(chunkX, chunkZ).load();
     }
-    buildLayout();
+    boolean markerPresent =
+        world
+            .getPersistentDataContainer()
+            .has(layoutInitializedKey, PersistentDataType.BYTE);
+    if (shouldBuildLayout(existedBeforeLoad, markerPresent)) {
+      buildLayout();
+      plugin.getLogger().info("Created the original Sheep City prototype layout.");
+    } else {
+      plugin
+          .getLogger()
+          .info("Loaded the existing Sheep City working world without rebuilding its blocks.");
+    }
+    world
+        .getPersistentDataContainer()
+        .set(layoutInitializedKey, PersistentDataType.BYTE, (byte) 1);
+    world.save();
+  }
+
+  static boolean shouldBuildLayout(boolean existedBeforeLoad, boolean markerPresent) {
+    return !existedBeforeLoad && !markerPresent;
   }
 
   World world() {
