@@ -7,6 +7,7 @@ public final class InstructionGraphJsonSelfTest {
   private InstructionGraphJsonSelfTest() {}
 
   public static void main(String[] args) {
+    verifiesNonDestructiveWorldInitialization();
     InstructionGraph graph =
         InstructionGraphJson.decode(
             JsonParser.parseString(
@@ -56,6 +57,21 @@ public final class InstructionGraphJsonSelfTest {
       throw new AssertionError("Unsupported opcode was accepted.");
     } catch (IllegalArgumentException expected) {
       if (!expected.getMessage().contains("Unsupported Sheep City instruction")) throw expected;
+    }
+  }
+
+  private static void verifiesNonDestructiveWorldInitialization() {
+    if (!SheepCityWorld.shouldBuildLayout(false, false)) {
+      throw new AssertionError("A genuinely new Sheep City world must receive the prototype layout.");
+    }
+    if (SheepCityWorld.shouldBuildLayout(true, false)) {
+      throw new AssertionError("A legacy working world must not be rebuilt on plugin upgrade.");
+    }
+    if (SheepCityWorld.shouldBuildLayout(true, true)) {
+      throw new AssertionError("An initialized working world must preserve student block changes.");
+    }
+    if (SheepCityWorld.shouldBuildLayout(false, true)) {
+      throw new AssertionError("An unexpected existing marker must fail toward preserving blocks.");
     }
   }
 }

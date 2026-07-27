@@ -42,6 +42,8 @@ physical Windows verification remains required
   City** controls while Paper is stopped.
 - Restore stages and verifies all files before replacing fixed managed world roots. Reset backs up
   first and removes only Sheep City so the original plugin-owned prototype regenerates next start.
+- Ordinary Paper startup no longer rebuilds the prototype over a working or restored Sheep City
+  world. The layout is generated only when the world directory is genuinely new.
 - At most five operational snapshots, 100,000 files, and 4 GiB per snapshot are accepted.
 
 ## Automated evidence
@@ -55,12 +57,14 @@ physical Windows verification remains required
   bound.
 - Rust tests cover backup creation, exact manifest verification, tamper refusal, restore, and
   Sheep City-only reset.
+- The Paper self-test covers the world-initialization policy: new worlds build once, while legacy,
+  initialized, and restored working worlds preserve their blocks.
 - Host TypeScript, Rust, formatting, lint, and production-build checks remain part of repository
   verification.
 
 ## Manual Windows verification
 
-1. Install BadgerBots Host 0.7.1 over the existing build and launch it from Start.
+1. Install BadgerBots Host 0.7.2 over the existing build and launch it from Start.
 2. Continue the retained setup. At Step 4, enter the exact teacher Minecraft Java username.
 3. Keep port `25565` and `4 GiB` unless the local environment requires another non-privileged port.
 4. Open and accept the Minecraft EULA, then select **Prepare server**.
@@ -104,6 +108,8 @@ physical Windows verification remains required
     manual snapshot so the changed state is now newest. Select the older **Before server start**
     recovery point, select **Restore selected**, and accept the warning. Start again and confirm
     both worlds match the older intact snapshot rather than the newer damaged/manual snapshot.
+    Then restore the newer manual snapshot and confirm its visible block changes return after
+    another Paper start.
 26. Stop, select **Reset Sheep City**, accept the warning, and start again. Confirm Sheep City
     regenerates while the teacher world remains unchanged. Select the **Before Sheep City reset**
     snapshot, restore it, and confirm the pre-reset Sheep City returns.

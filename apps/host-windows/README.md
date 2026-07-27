@@ -10,7 +10,7 @@ Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomical
 application-local runtime directory with restricted server settings. It never globally changes
 Java or an existing Minecraft server.
 
-Host 0.7.1 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
+Host 0.7.2 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
 Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
 firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
 
@@ -32,6 +32,10 @@ captures the current state and should not be used after damage when an earlier s
 Each file has SHA-256 evidence;
 unknown paths and links are rejected; snapshots are limited to 100,000 files/4 GiB and the newest
 five are retained.
+
+The embedded Paper plugin creates the prototype layout only when the Sheep City world directory is
+new. It preserves working-world and restored-snapshot block state on ordinary starts. The
+graphical Reset action remains the explicit path that removes Sheep City and requests regeneration.
 
 Host does **not** yet create the encrypted/compressed final retention export, remove/repair the
 firewall rule, install a private managed Java distribution, or install an update. Forced process

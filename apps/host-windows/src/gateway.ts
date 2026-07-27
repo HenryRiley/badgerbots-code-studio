@@ -146,7 +146,7 @@ export function createHostGateway(): HostGateway {
               ? "openjdk version 21 (preview)"
               : artifact.id === "paper"
                 ? "Paper 1.21.11 build 132"
-                : "BadgerBots Paper plugin 0.6.0-prototype",
+                : "BadgerBots Paper plugin 0.6.1-prototype",
           checksum: artifact.id === "java" ? "system-version-probe" : "a".repeat(64),
         })),
       };

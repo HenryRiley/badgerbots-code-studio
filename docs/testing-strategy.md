@@ -108,6 +108,12 @@ the working world, create a newer manual snapshot of that changed state, select 
 automatic snapshot, and prove the older contents are restored. The UI must label both snapshots
 by local time and reason and warn that a manual snapshot captures the current state.
 
+Host 0.7.2 and Paper plugin 0.6.1 add a non-destructive initialization policy self-test. A new
+missing world builds the original layout, but a legacy world without a marker, a marked world, and
+any restored world directory all skip layout writes. Physical Windows evidence must restore both
+an intact snapshot and a visibly modified snapshot, restarting Paper after each restore to prove
+startup does not overwrite either state.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.
