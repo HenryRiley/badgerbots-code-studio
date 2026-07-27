@@ -26,6 +26,7 @@ export function HostApp() {
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState("Loading protected Host state…");
   const [busy, setBusy] = useState(false);
+  const [selectedBackupId, setSelectedBackupId] = useState<string>();
   const consoleRef = useRef<HTMLPreElement>(null);
   const gate = useMemo(() => (snapshot ? canStartServer(snapshot) : undefined), [snapshot]);
 
@@ -67,6 +68,13 @@ export function HostApp() {
     if (consoleElement) consoleElement.scrollTop = consoleElement.scrollHeight;
   }, [snapshot?.serverLogs.length]);
 
+  useEffect(() => {
+    const backups = snapshot?.backup.snapshots ?? [];
+    setSelectedBackupId((current) =>
+      backups.some((backup) => backup.backupId === current) ? current : backups[0]?.backupId,
+    );
+  }, [snapshot?.backup.snapshots]);
+
   async function perform(work: () => Promise<string>) {
     setBusy(true);
     setError(undefined);
@@ -89,6 +97,9 @@ export function HostApp() {
     );
 
   const completed = snapshot.setupSteps.filter((step) => step.status === "complete").length;
+  const selectedBackup = snapshot.backup.snapshots.find(
+    (backup) => backup.backupId === selectedBackupId,
+  );
 
   return (
     <main className="host-shell">
@@ -354,10 +365,6 @@ export function HostApp() {
               <dd>{snapshot.backup.backupCount}/5</dd>
             </div>
             <div>
-              <dt>Latest size</dt>
-              <dd>{formatBytes(snapshot.backup.totalBytes)}</dd>
-            </div>
-            <div>
               <dt>Last server exit</dt>
               <dd>{titleCase(snapshot.server.lastExit)}</dd>
             </div>
@@ -368,9 +375,37 @@ export function HostApp() {
           </dl>
           <p className="backup-note">
             {snapshot.backup.lastAction === "sheep-city-reset-pending"
-              ? "Sheep City reset is pending. Start the server to regenerate it; Restore latest remains available."
-              : "Controls unlock only while Paper is stopped. Restore and reset always verify SHA-256 evidence before replacing a working world."}
+              ? "Sheep City reset is pending. Start the server to regenerate it; an earlier snapshot can still be selected and restored."
+              : "Choose the snapshot from before the damage occurred. Restore verifies SHA-256 evidence before replacing a working world."}
           </p>
+          <div className="backup-history">
+            <label htmlFor="backup-snapshot">Recovery point</label>
+            <select
+              id="backup-snapshot"
+              value={selectedBackupId ?? ""}
+              disabled={busy || snapshot.backup.snapshots.length === 0}
+              onChange={(event) => setSelectedBackupId(event.target.value)}
+            >
+              {snapshot.backup.snapshots.length === 0 ? (
+                <option value="">No world snapshots yet</option>
+              ) : null}
+              {snapshot.backup.snapshots.map((backup, index) => (
+                <option key={backup.backupId} value={backup.backupId}>
+                  {formatBackupTime(backup.createdAt)} — {backupReason(backup.reason)}
+                  {index === 0 ? " (newest)" : ""}
+                </option>
+              ))}
+            </select>
+            {selectedBackup ? (
+              <div className="backup-selection">
+                <strong>{backupReason(selectedBackup.reason)}</strong>
+                <span>
+                  {formatBackupTime(selectedBackup.createdAt)} ·{" "}
+                  {formatBytes(selectedBackup.totalBytes)} · {selectedBackup.worldCount} worlds
+                </span>
+              </div>
+            ) : null}
+          </div>
           <div className="backup-actions">
             <button
               type="button"
@@ -383,6 +418,12 @@ export function HostApp() {
               }
               onClick={() =>
                 void perform(async () => {
+                  if (
+                    !window.confirm(
+                      "Back up the worlds exactly as they are now? If the world is already damaged, use an older recovery point instead.",
+                    )
+                  )
+                    return "Backup cancelled.";
                   setMessage("Copying and verifying managed world files…");
                   setSnapshot(await gateway.createWorldBackup());
                   return "Managed worlds were backed up and verified.";
@@ -398,23 +439,24 @@ export function HostApp() {
                 busy ||
                 snapshot.server.lifecycle !== "stopped" ||
                 snapshot.backup.status !== "verified" ||
-                !snapshot.backup.latestId
+                !selectedBackup
               }
               onClick={() =>
                 void perform(async () => {
+                  if (!selectedBackup) return "Choose a recovery point first.";
                   if (
                     !window.confirm(
-                      "Restore the latest verified backup? Current managed worlds will be replaced.",
+                      `Restore ${backupReason(selectedBackup.reason)} from ${formatBackupTime(selectedBackup.createdAt)}? Current managed worlds will be replaced.`,
                     )
                   )
                     return "Restore cancelled.";
-                  setMessage("Verifying and restoring the latest managed-world snapshot…");
-                  setSnapshot(await gateway.restoreLatestWorldBackup());
-                  return "The latest verified world backup was restored.";
+                  setMessage("Verifying and restoring the selected managed-world snapshot…");
+                  setSnapshot(await gateway.restoreWorldBackup(selectedBackup.backupId));
+                  return "The selected verified world backup was restored.";
                 })
               }
             >
-              Restore latest
+              Restore selected
             </button>
             <button
               type="button"
@@ -984,6 +1026,25 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KiB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
+}
+
+function formatBackupTime(value: string): string {
+  const unixSeconds = value.startsWith("unix-") ? Number(value.slice(5)) : Number.NaN;
+  const date = Number.isFinite(unixSeconds) ? new Date(unixSeconds * 1000) : new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Time unavailable"
+    : date.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+}
+
+function backupReason(reason: HostSnapshot["backup"]["snapshots"][number]["reason"]): string {
+  const labels: Record<typeof reason, string> = {
+    "automatic-before-start": "Before server start",
+    manual: "Manual snapshot",
+    "before-sheep-city-reset": "Before Sheep City reset",
+    "recovery-after-interruption": "Crash-recovery snapshot",
+    legacy: "Earlier Host snapshot",
+  };
+  return labels[reason];
 }
 
 function titleCase(value: string): string {

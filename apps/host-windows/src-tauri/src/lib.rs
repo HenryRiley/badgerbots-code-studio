@@ -86,6 +86,8 @@ struct BackupState {
     last_action: Option<String>,
     #[serde(default)]
     operation: Option<String>,
+    #[serde(default)]
+    snapshots: Vec<world_backup::WorldBackupReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,7 +122,10 @@ struct HostStore {
 }
 
 impl HostStore {
-    fn load(path: PathBuf) -> Self {
+    fn load(
+        path: PathBuf,
+        discovered_backups: Option<Vec<world_backup::WorldBackupReport>>,
+    ) -> Self {
         let mut snapshot = fs::read_to_string(&path)
             .ok()
             .and_then(|contents| serde_json::from_str(&contents).ok())
@@ -142,13 +147,17 @@ impl HostStore {
                 "warning",
             );
         }
-        if snapshot.backup.latest_id.is_none() {
+        if let Some(backups) = discovered_backups {
+            snapshot.backup.snapshots = backups;
+            refresh_backup_summary(&mut snapshot.backup);
+        } else if snapshot.backup.latest_id.is_none() {
             snapshot.backup.status = "never".to_string();
             snapshot.backup.last_verified_at = None;
             snapshot.backup.backup_count = 0;
             snapshot.backup.total_bytes = 0;
             snapshot.backup.last_action = None;
             snapshot.backup.operation = None;
+            snapshot.backup.snapshots.clear();
         }
         Self {
             path,
@@ -748,7 +757,7 @@ async fn start_minecraft_server(
     let backup = (if sheep_city_reset_pending {
         runtime.verify_latest_world_backup()
     } else {
-        runtime.create_world_backup()
+        runtime.create_world_backup("automatic-before-start")
     })
     .inspect_err(|message| {
         record_start_preflight_failure(&host, message, true);
@@ -864,10 +873,14 @@ async fn recover_minecraft_server(
     };
     let prepared = runtime.prepare_artifacts().await?;
     let backup = match interrupted_operation.as_deref() {
-        Some("restore-in-progress" | "reset-in-progress") => {
-            runtime.restore_latest_world_backup()?
-        }
-        Some("backup-in-progress") => runtime.create_world_backup()?,
+        Some(operation) if operation.starts_with("restore-in-progress:") => runtime
+            .restore_world_backup(
+                operation
+                    .strip_prefix("restore-in-progress:")
+                    .unwrap_or_default(),
+            )?,
+        Some("reset-in-progress") => runtime.restore_latest_world_backup()?,
+        Some("backup-in-progress") => runtime.create_world_backup("recovery-after-interruption")?,
         _ => runtime.verify_latest_world_backup()?,
     };
     runtime.verified_server_launch()?;
@@ -879,10 +892,11 @@ async fn recover_minecraft_server(
     apply_backup_report(
         &mut snapshot,
         &backup,
-        if matches!(
-            interrupted_operation.as_deref(),
-            Some("restore-in-progress" | "reset-in-progress")
-        ) {
+        if interrupted_operation
+            .as_deref()
+            .is_some_and(|operation| operation.starts_with("restore-in-progress:"))
+            || interrupted_operation.as_deref() == Some("reset-in-progress")
+        {
             "restored-after-interrupted-maintenance"
         } else {
             "verified-after-crash"
@@ -910,9 +924,11 @@ fn create_world_backup(
     host: tauri::State<'_, HostStore>,
 ) -> Result<HostSnapshot, String> {
     begin_world_maintenance(&manager, &host, false, "backup-in-progress")?;
-    let report = runtime.create_world_backup().inspect_err(|message| {
-        end_failed_world_maintenance(&host, message, true);
-    })?;
+    let report = runtime
+        .create_world_backup("manual")
+        .inspect_err(|message| {
+            end_failed_world_maintenance(&host, message, true);
+        })?;
     let mut snapshot = host
         .snapshot
         .lock()
@@ -930,14 +946,28 @@ fn create_world_backup(
 }
 
 #[tauri::command]
-fn restore_latest_world_backup(
+fn restore_world_backup(
+    backup_id: String,
     runtime: tauri::State<'_, RuntimeStore>,
     manager: tauri::State<'_, ServerManager>,
     host: tauri::State<'_, HostStore>,
 ) -> Result<HostSnapshot, String> {
-    begin_world_maintenance(&manager, &host, true, "restore-in-progress")?;
+    if backup_id.len() > 80
+        || !backup_id.starts_with("world-")
+        || !backup_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("The selected backup identity is invalid.".to_string());
+    }
+    begin_world_maintenance(
+        &manager,
+        &host,
+        true,
+        &format!("restore-in-progress:{backup_id}"),
+    )?;
     let report = runtime
-        .restore_latest_world_backup()
+        .restore_world_backup(&backup_id)
         .inspect_err(|message| {
             end_failed_world_maintenance(&host, message, false);
         })?;
@@ -946,13 +976,13 @@ fn restore_latest_world_backup(
         .lock()
         .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
     snapshot.server.lifecycle = "stopped".to_string();
-    apply_backup_report(&mut snapshot, &report, "restored-latest", false);
+    apply_backup_report(&mut snapshot, &report, "restored-selected", false);
     snapshot.server.last_exit = "clean".to_string();
     snapshot.server.recovery_required = false;
     push_diagnostic(
         &mut snapshot,
         "WORLD_BACKUP_RESTORED",
-        "The latest verified managed-world backup was restored atomically.",
+        "The selected verified managed-world backup was restored atomically.",
         "warning",
     );
     host.persist(&snapshot)?;
@@ -1045,13 +1075,42 @@ fn apply_backup_report(
 ) {
     snapshot.backup.status = "verified".to_string();
     snapshot.backup.last_verified_at = Some(report.created_at.clone());
-    snapshot.backup.latest_id = Some(report.backup_id.clone());
     if created {
-        snapshot.backup.backup_count = snapshot.backup.backup_count.saturating_add(1).min(5);
+        snapshot
+            .backup
+            .snapshots
+            .retain(|backup| backup.backup_id != report.backup_id);
+        snapshot.backup.snapshots.push(report.clone());
     }
-    snapshot.backup.total_bytes = report.total_bytes;
+    refresh_backup_summary(&mut snapshot.backup);
     snapshot.backup.last_action = Some(action.to_string());
     snapshot.backup.operation = None;
+}
+
+fn refresh_backup_summary(backup: &mut BackupState) {
+    backup
+        .snapshots
+        .sort_by(|left, right| right.backup_id.cmp(&left.backup_id));
+    backup.snapshots.truncate(5);
+    backup.backup_count = backup.snapshots.len();
+    backup.latest_id = backup
+        .snapshots
+        .first()
+        .map(|snapshot| snapshot.backup_id.clone());
+    backup.total_bytes = backup
+        .snapshots
+        .first()
+        .map_or(0, |snapshot| snapshot.total_bytes);
+    if backup.snapshots.is_empty() {
+        backup.status = "never".to_string();
+        backup.last_verified_at = None;
+    } else {
+        backup.status = "verified".to_string();
+        backup.last_verified_at = backup
+            .snapshots
+            .first()
+            .map(|snapshot| snapshot.created_at.clone());
+    }
 }
 
 fn apply_prepared_artifacts(snapshot: &mut HostSnapshot, prepared: &runtime::ArtifactPreparation) {
@@ -1205,6 +1264,7 @@ fn initial_snapshot() -> HostSnapshot {
             total_bytes: 0,
             last_action: None,
             operation: None,
+            snapshots: Vec::new(),
         },
         update: UpdateState {
             status: "not_checked".to_string(),
@@ -1268,9 +1328,11 @@ pub fn run() {
         .setup(|app| {
             let data_directory = app.path().app_local_data_dir()?;
             let state_path = data_directory.join("host-state.json");
-            app.manage(HostStore::load(state_path));
+            let runtime = RuntimeStore::new(data_directory.join("minecraft-runtime"));
+            let discovered_backups = runtime.world_backups().ok();
+            app.manage(HostStore::load(state_path, discovered_backups));
             app.manage(OnboardingStore::load(&data_directory).map_err(std::io::Error::other)?);
-            app.manage(RuntimeStore::new(data_directory.join("minecraft-runtime")));
+            app.manage(runtime);
             app.manage(ServerManager::new());
             Ok(())
         })
@@ -1312,7 +1374,7 @@ pub fn run() {
             stop_minecraft_server,
             recover_minecraft_server,
             create_world_backup,
-            restore_latest_world_backup,
+            restore_world_backup,
             reset_sheep_city_world
         ])
         .run(tauri::generate_context!())

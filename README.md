@@ -21,11 +21,13 @@ Checkpoint 14 begins release productization: the native Windows Host now owns in
 location selection, secure pairing, current-user protected credential storage, and hardware
 probing inside its graphical wizard. The current Checkpoint 15 slices add managed server
 configuration, pinned Paper/plugin verification, configuration recovery evidence, and scoped
-Private-network firewall approval. Host 0.7.0 also runs a real bounded Paper/plugin/bridge
+Private-network firewall approval. Host 0.7.1 also runs a real bounded Paper/plugin/bridge
 readiness test and now owns permanent Start/Stop/Recover lifecycle controls, conditional Windows
 sleep prevention, clean close handling, and a realtime redacted Paper console without opening a
 command window. It now adds bounded SHA-256 world snapshots, automatic pre-start backup,
-transactional latest restore, and a safe Sheep City reset. The encrypted final-retention export,
+transactional selectable-snapshot restore, and a safe Sheep City reset. Recovery points identify
+automatic, manual, reset, and crash-recovery snapshots so damage is not accidentally restored just
+because it was backed up most recently. The encrypted final-retention export,
 managed Java, and installer repair remain open. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),

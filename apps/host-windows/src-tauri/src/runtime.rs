@@ -108,7 +108,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.7.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.7.1 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
@@ -228,12 +228,12 @@ impl RuntimeStore {
         })
     }
 
-    pub fn create_world_backup(&self) -> Result<WorldBackupReport, String> {
+    pub fn create_world_backup(&self, reason: &str) -> Result<WorldBackupReport, String> {
         let _operation = self
             .world_operations
             .lock()
             .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
-        world_backup::create(&self.directory)
+        world_backup::create(&self.directory, reason)
     }
 
     pub fn verify_latest_world_backup(&self) -> Result<WorldBackupReport, String> {
@@ -244,12 +244,32 @@ impl RuntimeStore {
         world_backup::verify_latest(&self.directory)
     }
 
+    pub fn world_backups(&self) -> Result<Vec<WorldBackupReport>, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        world_backup::inventory(&self.directory)
+    }
+
+    pub fn restore_world_backup(&self, backup_id: &str) -> Result<WorldBackupReport, String> {
+        let _operation = self
+            .world_operations
+            .lock()
+            .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
+        world_backup::restore(&self.directory, backup_id)
+    }
+
     pub fn restore_latest_world_backup(&self) -> Result<WorldBackupReport, String> {
         let _operation = self
             .world_operations
             .lock()
             .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
-        world_backup::restore_latest(&self.directory)
+        let latest = world_backup::inventory(&self.directory)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No verified world backup exists yet.".to_string())?;
+        world_backup::restore(&self.directory, &latest.backup_id)
     }
 
     pub fn backup_and_reset_sheep_city(&self) -> Result<WorldBackupReport, String> {
@@ -257,7 +277,7 @@ impl RuntimeStore {
             .world_operations
             .lock()
             .map_err(|_| "World backup controls are temporarily unavailable.".to_string())?;
-        let report = world_backup::create(&self.directory)?;
+        let report = world_backup::create(&self.directory, "before-sheep-city-reset")?;
         world_backup::reset_sheep_city(&self.directory).map(|()| report)
     }
 

@@ -38,7 +38,7 @@ physical Windows verification remains required
 - Unexpected Paper exit moves Host to Failed and requires **Verify and recover** before restart.
   Windows sleep prevention is active only while Paper is ready.
 - Start creates and verifies a checksummed managed-world snapshot before launching Paper.
-- The Recovery panel provides functional **Back up now**, **Restore latest**, and **Reset Sheep
+- The Recovery panel provides functional **Back up now**, **Restore selected**, and **Reset Sheep
   City** controls while Paper is stopped.
 - Restore stages and verifies all files before replacing fixed managed world roots. Reset backs up
   first and removes only Sheep City so the original plugin-owned prototype regenerates next start.
@@ -60,7 +60,7 @@ physical Windows verification remains required
 
 ## Manual Windows verification
 
-1. Install BadgerBots Host 0.7.0 over the existing build and launch it from Start.
+1. Install BadgerBots Host 0.7.1 over the existing build and launch it from Start.
 2. Continue the retained setup. At Step 4, enter the exact teacher Minecraft Java username.
 3. Keep port `25565` and `4 GiB` unless the local environment requires another non-privileged port.
 4. Open and accept the Minecraft EULA, then select **Prepare server**.
@@ -100,12 +100,13 @@ physical Windows verification remains required
     power policy resumes.
 24. With Paper stopped, select **Back up now**. Confirm the status becomes Verified, snapshot count
     increases, and latest size is nonzero.
-25. Start Minecraft, visibly change Sheep City and the teacher world, stop cleanly, then select
-    **Restore latest** and accept the warning. Start again and confirm both worlds match the
-    snapshot.
+25. Start Minecraft, visibly change Sheep City and the teacher world, then stop cleanly. Create a
+    manual snapshot so the changed state is now newest. Select the older **Before server start**
+    recovery point, select **Restore selected**, and accept the warning. Start again and confirm
+    both worlds match the older intact snapshot rather than the newer damaged/manual snapshot.
 26. Stop, select **Reset Sheep City**, accept the warning, and start again. Confirm Sheep City
-    regenerates while the teacher world remains unchanged. Restore latest and confirm the
-    pre-reset Sheep City returns.
+    regenerates while the teacher world remains unchanged. Select the **Before Sheep City reset**
+    snapshot, restore it, and confirm the pre-reset Sheep City returns.
 27. Create more than five backups and confirm the displayed retained count stays at five.
 28. Copy and alter a file inside the newest backup on a disposable test installation. Confirm
     Restore fails with a SHA-256 error and current worlds remain untouched.

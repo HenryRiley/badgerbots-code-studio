@@ -95,13 +95,18 @@ Running is not shown before all readiness signals, Stop exits cleanly, normal Ho
 Paper, unexpected child exit requires recovery, sleep policy is restored, and neither Java nor a
 Command Prompt window becomes visible.
 
-Host 0.7.0 adds native filesystem tests for staged world backup creation, per-file SHA-256
-verification, tamper refusal, transactional latest restore, and Sheep City-only reset. The
+Host 0.7.1 adds native filesystem tests for staged world backup creation, per-file SHA-256
+verification, tamper refusal, transactional selected-snapshot restore, and Sheep City-only reset. The
 frontend contract no longer requires a manually fabricated backup before Start because native
 Start creates and verifies one itself. Physical Windows evidence must test paths with spaces,
 automatic pre-start backup, manual backup, tampered-manifest refusal, restore after a visible
 world change, reset/regeneration, five-snapshot rotation, low disk space, and interruption during
 copy/commit.
+
+The corrective 0.7.1 recovery flow must additionally create an intact automatic snapshot, change
+the working world, create a newer manual snapshot of that changed state, select the older
+automatic snapshot, and prove the older contents are restored. The UI must label both snapshots
+by local time and reason and warn that a manual snapshot captures the current state.
 
 ## Required real-environment tests
 

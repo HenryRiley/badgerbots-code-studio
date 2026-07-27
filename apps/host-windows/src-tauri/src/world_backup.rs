@@ -18,12 +18,19 @@ const SHEEP_CITY_WORLD: &str = "badgerbots_sheep_city_prototype";
 const MAX_BACKUPS: usize = 5;
 const MAX_FILES: usize = 100_000;
 const MAX_TOTAL_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+const BACKUP_REASONS: [&str; 4] = [
+    "automatic-before-start",
+    "manual",
+    "before-sheep-city-reset",
+    "recovery-after-interruption",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WorldBackupReport {
     pub backup_id: String,
     pub created_at: String,
+    pub reason: String,
     pub world_count: usize,
     pub file_count: usize,
     pub total_bytes: u64,
@@ -35,6 +42,8 @@ struct WorldBackupManifest {
     schema_version: u8,
     backup_id: String,
     created_at: String,
+    #[serde(default = "legacy_reason")]
+    reason: String,
     files: Vec<BackupFile>,
 }
 
@@ -46,7 +55,10 @@ struct BackupFile {
     sha256: String,
 }
 
-pub(crate) fn create(runtime: &Path) -> Result<WorldBackupReport, String> {
+pub(crate) fn create(runtime: &Path, reason: &str) -> Result<WorldBackupReport, String> {
+    if !BACKUP_REASONS.contains(&reason) {
+        return Err("The world backup reason is unsupported.".to_string());
+    }
     let backup_root = runtime.join("backups");
     fs::create_dir_all(&backup_root)
         .map_err(|_| "The managed backup directory could not be prepared.".to_string())?;
@@ -101,6 +113,7 @@ pub(crate) fn create(runtime: &Path) -> Result<WorldBackupReport, String> {
             schema_version: 1,
             backup_id: backup_id.clone(),
             created_at: created_at.clone(),
+            reason: reason.to_string(),
             files,
         };
         write_json_atomic(&staging.join("manifest.json"), &manifest)?;
@@ -125,8 +138,24 @@ pub(crate) fn verify_latest(runtime: &Path) -> Result<WorldBackupReport, String>
     verify_directory(&latest)
 }
 
-pub(crate) fn restore_latest(runtime: &Path) -> Result<WorldBackupReport, String> {
-    let backup = latest_backup_directory(runtime)?;
+pub(crate) fn inventory(runtime: &Path) -> Result<Vec<WorldBackupReport>, String> {
+    let mut backups = backup_directories(&runtime.join("backups"))?;
+    backups.sort();
+    backups.reverse();
+    backups
+        .into_iter()
+        .map(|directory| read_manifest(&directory).map(|manifest| report_from_manifest(&manifest)))
+        .collect()
+}
+
+pub(crate) fn restore(runtime: &Path, backup_id: &str) -> Result<WorldBackupReport, String> {
+    let backup = backup_directories(&runtime.join("backups"))?
+        .into_iter()
+        .find(|directory| directory.file_name().and_then(|name| name.to_str()) == Some(backup_id))
+        .ok_or_else(|| {
+            "The selected world backup no longer exists. Refresh Host and choose another snapshot."
+                .to_string()
+        })?;
     let report = verify_directory(&backup)?;
     let manifest = read_manifest(&backup)?;
     let (operation_id, _) = new_backup_identity()?;
@@ -290,6 +319,7 @@ fn report_from_manifest(manifest: &WorldBackupManifest) -> WorldBackupReport {
     WorldBackupReport {
         backup_id: manifest.backup_id.clone(),
         created_at: manifest.created_at.clone(),
+        reason: manifest.reason.clone(),
         world_count: worlds.len(),
         file_count: manifest.files.len(),
         total_bytes: manifest.files.iter().map(|file| file.size).sum(),
@@ -412,11 +442,16 @@ fn read_manifest(directory: &Path) -> Result<WorldBackupManifest, String> {
         .map_err(|_| "The world backup manifest is invalid.".to_string())?;
     if manifest.schema_version != 1
         || manifest.files.is_empty()
+        || (!BACKUP_REASONS.contains(&manifest.reason.as_str()) && manifest.reason != "legacy")
         || directory.file_name().and_then(|name| name.to_str()) != Some(&manifest.backup_id)
     {
         return Err("The world backup manifest identity is invalid.".to_string());
     }
     Ok(manifest)
+}
+
+fn legacy_reason() -> String {
+    "legacy".to_string()
 }
 
 fn latest_backup_directory(runtime: &Path) -> Result<PathBuf, String> {
@@ -528,7 +563,7 @@ fn new_backup_identity() -> Result<(String, String), String> {
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     Ok((
-        format!("world-{}-{suffix}", now.as_millis()),
+        format!("world-{}-{suffix}", now.as_nanos()),
         format!("unix-{}", now.as_secs()),
     ))
 }
@@ -562,7 +597,7 @@ mod tests {
     #[test]
     fn creates_and_verifies_a_bounded_world_backup() {
         let runtime = fixture();
-        let report = create(&runtime).expect("backup should succeed");
+        let report = create(&runtime, "automatic-before-start").expect("backup should succeed");
         assert_eq!(report.world_count, 2);
         assert_eq!(report.file_count, 2);
         assert_eq!(verify_latest(&runtime), Ok(report));
@@ -572,7 +607,7 @@ mod tests {
     #[test]
     fn rejects_a_tampered_world_backup() {
         let runtime = fixture();
-        let report = create(&runtime).expect("backup should succeed");
+        let report = create(&runtime, "manual").expect("backup should succeed");
         fs::write(
             runtime
                 .join("backups")
@@ -590,7 +625,7 @@ mod tests {
         let runtime = fixture();
         fs::remove_dir_all(runtime.join(SHEEP_CITY_WORLD))
             .expect("Sheep City fixture should be removed");
-        assert!(create(&runtime).is_err());
+        assert!(create(&runtime, "manual").is_err());
         assert!(
             backup_directories(&runtime.join("backups"))
                 .expect("backup inventory should load")
@@ -600,13 +635,24 @@ mod tests {
     }
 
     #[test]
-    fn restores_latest_without_leaving_the_changed_world() {
+    fn restores_the_selected_older_snapshot_without_leaving_the_changed_world() {
         let runtime = fixture();
-        let report = create(&runtime).expect("backup should succeed");
+        let intact = create(&runtime, "automatic-before-start").expect("backup should succeed");
         fs::write(runtime.join("teacher_world/level.dat"), b"teacher-v2")
             .expect("working world should change");
-        let restored = restore_latest(&runtime).expect("restore should succeed");
-        assert_eq!(restored, report);
+        let changed = create(&runtime, "manual").expect("changed-world backup should succeed");
+        let snapshots = inventory(&runtime).expect("backup history should load");
+        assert_eq!(
+            snapshots
+                .iter()
+                .map(|snapshot| snapshot.backup_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![changed.backup_id.as_str(), intact.backup_id.as_str()]
+        );
+        assert_eq!(snapshots[0].reason, "manual");
+        assert_eq!(snapshots[1].reason, "automatic-before-start");
+        let restored = restore(&runtime, &intact.backup_id).expect("restore should succeed");
+        assert_eq!(restored, intact);
         assert_eq!(
             fs::read(runtime.join("teacher_world/level.dat")).expect("world should be readable"),
             b"teacher-v1"
@@ -617,7 +663,7 @@ mod tests {
     #[test]
     fn resets_only_sheep_city_after_a_verified_backup() {
         let runtime = fixture();
-        create(&runtime).expect("backup should succeed");
+        create(&runtime, "before-sheep-city-reset").expect("backup should succeed");
         reset_sheep_city(&runtime).expect("reset should succeed");
         assert!(!runtime.join(SHEEP_CITY_WORLD).exists());
         assert!(runtime.join("teacher_world").exists());
@@ -634,7 +680,7 @@ mod tests {
                 format!("teacher-v{revision}"),
             )
             .expect("working world should change");
-            create(&runtime).expect("backup should succeed");
+            create(&runtime, "manual").expect("backup should succeed");
         }
         assert_eq!(
             backup_directories(&runtime.join("backups"))
