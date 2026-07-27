@@ -30,6 +30,16 @@ function readySnapshot(): HostSnapshot {
       latestId: "world-test",
       backupCount: 1,
       totalBytes: 8192,
+      snapshots: [
+        {
+          backupId: "world-test",
+          createdAt: "unix-1784764800",
+          reason: "automatic-before-start",
+          worldCount: 2,
+          fileCount: 10,
+          totalBytes: 8192,
+        },
+      ],
     },
   };
 }

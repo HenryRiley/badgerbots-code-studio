@@ -8,6 +8,7 @@ import {
   type ServerConfigurationInput,
   type SignInResult,
   type SetupStepId,
+  type WorldBackupSnapshot,
 } from "./domain.js";
 
 declare global {
@@ -36,7 +37,7 @@ export interface HostGateway {
   stopServer(): Promise<HostSnapshot>;
   recoverServer(): Promise<HostSnapshot>;
   createWorldBackup(): Promise<HostSnapshot>;
-  restoreLatestWorldBackup(): Promise<HostSnapshot>;
+  restoreWorldBackup(backupId: string): Promise<HostSnapshot>;
   resetSheepCityWorld(): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
   resetPreview(): Promise<HostSnapshot>;
@@ -192,17 +193,9 @@ export function createHostGateway(): HostGateway {
       return Promise.resolve(structuredClone(snapshot));
     },
     startServer: () => {
-      const now = new Date().toISOString();
+      snapshot = previewBackup(snapshot, "automatic-before-start");
       snapshot = {
         ...snapshot,
-        backup: {
-          status: "verified",
-          lastVerifiedAt: now,
-          latestId: `world-preview-${Date.now()}`,
-          backupCount: Math.min(5, snapshot.backup.backupCount + 1),
-          totalBytes: 8_192,
-          lastAction: "automatic-before-start",
-        },
         server: {
           ...snapshot.server,
           lifecycle: "running",
@@ -249,10 +242,12 @@ export function createHostGateway(): HostGateway {
       snapshot = previewBackup(snapshot, "manual-backup");
       return Promise.resolve(structuredClone(snapshot));
     },
-    restoreLatestWorldBackup: () => {
+    restoreWorldBackup: (backupId) => {
+      if (!snapshot.backup.snapshots.some((backup) => backup.backupId === backupId))
+        return Promise.reject(new Error("The selected backup no longer exists."));
       snapshot = {
         ...snapshot,
-        backup: { ...snapshot.backup, lastAction: "restored-latest" },
+        backup: { ...snapshot.backup, lastAction: "restored-selected" },
       };
       return Promise.resolve(structuredClone(snapshot));
     },
@@ -299,22 +294,42 @@ const nativeGateway: HostGateway = {
   stopServer: () => invoke<HostSnapshot>("stop_minecraft_server"),
   recoverServer: () => invoke<HostSnapshot>("recover_minecraft_server"),
   createWorldBackup: () => invoke<HostSnapshot>("create_world_backup"),
-  restoreLatestWorldBackup: () => invoke<HostSnapshot>("restore_latest_world_backup"),
+  restoreWorldBackup: (backupId) => invoke<HostSnapshot>("restore_world_backup", { backupId }),
   resetSheepCityWorld: () => invoke<HostSnapshot>("reset_sheep_city_world"),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),
 };
 
 function previewBackup(snapshot: HostSnapshot, lastAction: string): HostSnapshot {
+  const createdAt = `unix-${Math.floor(Date.now() / 1000)}`;
+  const backupId = `world-preview-${Date.now()}`;
+  const reason: WorldBackupSnapshot["reason"] =
+    lastAction === "automatic-before-start"
+      ? "automatic-before-start"
+      : lastAction === "sheep-city-reset-pending"
+        ? "before-sheep-city-reset"
+        : "manual";
+  const backups = [
+    {
+      backupId,
+      createdAt,
+      reason,
+      worldCount: 2,
+      fileCount: 12,
+      totalBytes: 8_192,
+    },
+    ...snapshot.backup.snapshots,
+  ].slice(0, 5);
   return {
     ...snapshot,
     backup: {
       status: "verified",
-      lastVerifiedAt: new Date().toISOString(),
-      latestId: `world-preview-${Date.now()}`,
-      backupCount: Math.min(5, snapshot.backup.backupCount + 1),
+      lastVerifiedAt: createdAt,
+      latestId: backupId,
+      backupCount: backups.length,
       totalBytes: 8_192,
       lastAction,
+      snapshots: backups,
     },
   };
 }

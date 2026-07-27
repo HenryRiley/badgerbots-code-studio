@@ -10,7 +10,7 @@ Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomical
 application-local runtime directory with restricted server settings. It never globally changes
 Java or an existing Minecraft server.
 
-Host 0.7.0 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
+Host 0.7.1 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
 Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
 firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
 
@@ -25,8 +25,11 @@ it does not execute arbitrary Paper, Java, or shell commands. A normal app close
 to stop cleanly, and Windows sleep is inhibited only while the server is ready.
 
 Host now creates a verified operational world snapshot before each normal server start. While
-Paper is stopped, the Recovery panel can also create a backup, restore the latest snapshot, or
-reset only Sheep City after first creating a recovery snapshot. Each file has SHA-256 evidence;
+Paper is stopped, the Recovery panel can also create a backup, select and restore any retained
+snapshot, or reset only Sheep City after first creating a recovery snapshot. Every recovery point
+shows its local time, reason, size, and world count. A manual-backup warning explains that it
+captures the current state and should not be used after damage when an earlier snapshot is wanted.
+Each file has SHA-256 evidence;
 unknown paths and links are rejected; snapshots are limited to 100,000 files/4 GiB and the newest
 five are retained.
 

@@ -46,6 +46,20 @@ export interface DiagnosticEvent {
   correlationId: string;
 }
 
+export interface WorldBackupSnapshot {
+  backupId: string;
+  createdAt: string;
+  reason:
+    | "automatic-before-start"
+    | "manual"
+    | "before-sheep-city-reset"
+    | "recovery-after-interruption"
+    | "legacy";
+  worldCount: number;
+  fileCount: number;
+  totalBytes: number;
+}
+
 export interface HostSnapshot {
   schemaVersion: 1;
   mode: "browser_preview" | "native";
@@ -69,6 +83,7 @@ export interface HostSnapshot {
     totalBytes: number;
     lastAction?: string;
     operation?: string;
+    snapshots: WorldBackupSnapshot[];
   };
   update: {
     status: "not_checked" | "current" | "available" | "blocked";
@@ -223,7 +238,7 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
       lastExit: "unknown",
       recoveryRequired: false,
     },
-    backup: { status: "never", backupCount: 0, totalBytes: 0 },
+    backup: { status: "never", backupCount: 0, totalBytes: 0, snapshots: [] },
     update: { status: "not_checked", channel: "internal" },
     pendingOutboundMessages: 0,
     diagnostics: [
