@@ -6,6 +6,7 @@ import {
   type HostOnboardingView,
   type HostSnapshot,
   type InstructorProfile,
+  type RuntimeInstallProgress,
   validateHostServiceInput,
   validateServerConfiguration,
 } from "./domain.js";
@@ -26,6 +27,7 @@ export function HostApp() {
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState("Loading protected Host state…");
   const [busy, setBusy] = useState(false);
+  const [installProgress, setInstallProgress] = useState<RuntimeInstallProgress>();
   const [selectedBackupId, setSelectedBackupId] = useState<string>();
   const consoleRef = useRef<HTMLPreElement>(null);
   const gate = useMemo(() => (snapshot ? canStartServer(snapshot) : undefined), [snapshot]);
@@ -43,6 +45,22 @@ export function HostApp() {
     void refresh().catch((reason: unknown) => {
       setError(hostErrorMessage(reason, "Host state could not be loaded."));
     });
+  }, []);
+
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return;
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    void listen<RuntimeInstallProgress>("host-install-progress", (event) => {
+      if (!disposed) setInstallProgress(event.payload);
+    }).then((nextUnlisten) => {
+      if (disposed) nextUnlisten();
+      else unlisten = nextUnlisten;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -135,6 +153,29 @@ export function HostApp() {
       <div className="status-banner" aria-live="polite">
         {message}
       </div>
+      {installProgress ? (
+        <section className={`install-progress ${installProgress.phase}`} aria-live="polite">
+          <div>
+            <strong>
+              {installProgress.repair ? "Managed Java repair" : "Managed runtime setup"}
+            </strong>
+            <span>{installProgress.message}</span>
+          </div>
+          <progress
+            max={100}
+            value={installProgress.percent}
+            aria-label={installProgress.message}
+          />
+          <small>
+            {installProgress.percent !== undefined
+              ? `${installProgress.percent}%`
+              : "Checking files…"}
+            {installProgress.totalBytes
+              ? ` · ${formatMegabytes(installProgress.downloadedBytes)} of ${formatMegabytes(installProgress.totalBytes)}`
+              : ""}
+          </small>
+        </section>
+      ) : null}
 
       <OnboardingWizard
         onboarding={onboarding}
@@ -321,14 +362,30 @@ export function HostApp() {
                   <p>{artifact.version}</p>
                   {artifact.status === "verified" ? (
                     <small className="artifact-proof">
-                      {artifact.checksum === "system-version-probe"
-                        ? "System version probe"
-                        : `SHA-256 ${artifact.checksum.slice(0, 12)}…`}
+                      SHA-256 {artifact.checksum.slice(0, 12)}…
                     </small>
                   ) : null}
                 </div>
               ))}
             </div>
+            {snapshot.artifacts.some(
+              (artifact) => artifact.id === "java" && artifact.status === "verified",
+            ) ? (
+              <button
+                type="button"
+                className="secondary-button repair-button"
+                disabled={busy || snapshot.server.lifecycle !== "stopped"}
+                onClick={() =>
+                  void perform(async () => {
+                    setInstallProgress(undefined);
+                    setSnapshot(await gateway.repairManagedJava());
+                    return "Managed Java 21 verification and repair completed inside Host.";
+                  })
+                }
+              >
+                {busy ? "Checking managed Java…" : "Verify & repair Java"}
+              </button>
+            ) : null}
           </article>
         </div>
       </section>
@@ -607,8 +664,9 @@ function OnboardingWizard(props: {
             <p className="eyebrow">Minecraft server</p>
             <h2>Prepare the private classroom server</h2>
             <p>
-              Host will create the managed server folder and safe configuration. It checks Java 21
-              without opening a command window.
+              Host will create the managed server folder and safe configuration. The next screen
+              installs a private Java 21 runtime without opening a command window or changing
+              Windows Java settings.
             </p>
           </div>
         </div>
@@ -698,8 +756,8 @@ function OnboardingWizard(props: {
             <h2>Install the Minecraft runtime</h2>
             <p>
               Host will download the pinned Paper server from PaperMC, verify its SHA-256 checksum,
-              install the BadgerBots plugin bundled with this installer, and create a configuration
-              recovery snapshot.
+              download a free pinned Eclipse Temurin Java 21 runtime, verify both checksums, install
+              them privately, add the bundled BadgerBots plugin, and create a recovery snapshot.
             </p>
           </div>
         </div>
@@ -712,7 +770,7 @@ function OnboardingWizard(props: {
             onClick={() =>
               void props.perform(async () => {
                 props.onRuntimePrepared(await gateway.prepareRuntimeArtifacts());
-                return "Paper, the BadgerBots plugin, and Java 21 passed runtime preparation.";
+                return "Private Java 21, Paper, and the BadgerBots plugin passed verification.";
               })
             }
           >
@@ -1049,4 +1107,8 @@ function backupReason(reason: HostSnapshot["backup"]["snapshots"][number]["reaso
 
 function titleCase(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }

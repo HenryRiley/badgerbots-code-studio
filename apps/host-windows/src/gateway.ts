@@ -31,6 +31,7 @@ export interface HostGateway {
   probeHardware(): Promise<HostSnapshot>;
   configureServer(input: ServerConfigurationInput): Promise<HostSnapshot>;
   prepareRuntimeArtifacts(): Promise<HostSnapshot>;
+  repairManagedJava(): Promise<HostSnapshot>;
   approveFirewall(): Promise<HostSnapshot>;
   testServer(): Promise<HostSnapshot>;
   startServer(): Promise<HostSnapshot>;
@@ -147,11 +148,12 @@ export function createHostGateway(): HostGateway {
               : artifact.id === "paper"
                 ? "Paper 1.21.11 build 132"
                 : "BadgerBots Paper plugin 0.6.1-prototype",
-          checksum: artifact.id === "java" ? "system-version-probe" : "a".repeat(64),
+          checksum: artifact.id === "java" ? "b".repeat(64) : "a".repeat(64),
         })),
       };
       return Promise.resolve(structuredClone(snapshot));
     },
+    repairManagedJava: () => Promise.resolve(structuredClone(snapshot)),
     approveFirewall: () => {
       snapshot = completeSetupStep(
         snapshot,
@@ -288,6 +290,7 @@ const nativeGateway: HostGateway = {
       eulaAccepted: input.eulaAccepted,
     }),
   prepareRuntimeArtifacts: () => invoke<HostSnapshot>("prepare_runtime_artifacts"),
+  repairManagedJava: () => invoke<HostSnapshot>("repair_managed_java"),
   approveFirewall: () => invoke<HostSnapshot>("approve_minecraft_firewall"),
   testServer: () => invoke<HostSnapshot>("test_minecraft_server"),
   startServer: () => invoke<HostSnapshot>("start_minecraft_server"),

@@ -6,13 +6,16 @@ Windows-protected credential persistence, platform/RAM readiness probing, and ma
 server configuration without PowerShell or configuration-file editing.
 
 Step 4 asks for the exact teacher Minecraft Java username, server port, memory limit, and explicit
-Minecraft EULA acceptance. Host verifies the system Java 21 runtime and atomically creates a private
-application-local runtime directory with restricted server settings. It never globally changes
-Java or an existing Minecraft server.
+Minecraft EULA acceptance. Host atomically creates a private application-local runtime directory
+with restricted server settings. The next graphical step downloads Eclipse Temurin JRE
+21.0.11+10, verifies its pinned archive SHA-256, and installs it only below that directory. It
+never reads or changes global Java, `JAVA_HOME`, PATH, the Java registry, or an existing Minecraft
+server.
 
-Host 0.7.2 can download the pinned Paper build, verify its SHA-256, install the plugin embedded by
-Windows CI, create a configuration recovery snapshot, and request a Private-network-only Windows
-firewall rule through a normal UAC prompt. These actions happen in the app without PowerShell.
+Host 0.8.0 can download the pinned Java and Paper builds, verify their SHA-256 values, install the
+plugin embedded by Windows CI, create a configuration recovery snapshot, and request a
+Private-network-only Windows firewall rule through a normal UAC prompt. Java download, installed
+file verification, and repair progress stay inside the app without PowerShell.
 
 The final setup step performs a bounded real Paper smoke test: it verifies the Sheep City plugin,
 authenticated local bridge, loopback listener, and clean shutdown while keeping redacted output in
@@ -37,9 +40,15 @@ The embedded Paper plugin creates the prototype layout only when the Sheep City 
 new. It preserves working-world and restored-snapshot block state on ordinary starts. The
 graphical Reset action remains the explicit path that removes Sheep City and requests regeneration.
 
+Before every Paper start, Host verifies every file in the private Java runtime. Missing, changed,
+or unexpected files trigger a clean download and staged replacement. **Verify & repair Java**
+provides the same operation on demand while Paper is stopped. Paper always launches with the exact
+private `managed-java/temurin-21.0.11+10-windows-x64/bin/java.exe`; it never resolves `java` from
+PATH.
+
 Host does **not** yet create the encrypted/compressed final retention export, remove/repair the
-firewall rule, install a private managed Java distribution, or install an update. Forced process
-termination and power-loss recovery still need physical Windows drills.
+firewall rule, or install an authenticated application update. Forced process termination,
+power-loss recovery, Java repair, and uninstall cleanup still need physical Windows drills.
 
 ## Browser preview
 

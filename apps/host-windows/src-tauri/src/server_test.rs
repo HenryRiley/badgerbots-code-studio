@@ -158,7 +158,7 @@ pub(crate) fn spawn_server(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
 
-    let mut command = Command::new("java");
+    let mut command = Command::new(&launch.java_path);
     command
         .arg("-Xms1G")
         .arg(format!("-Xmx{}G", launch.configuration.max_heap_gib))
@@ -174,6 +174,11 @@ pub(crate) fn spawn_server(
         .arg(&launch.paper_path)
         .arg("--nogui")
         .current_dir(&launch.runtime_directory)
+        .env_remove("JAVA_HOME")
+        .env_remove("JAVA_TOOL_OPTIONS")
+        .env_remove("JDK_JAVA_OPTIONS")
+        .env_remove("_JAVA_OPTIONS")
+        .env_remove("CLASSPATH")
         .env("BADGERBOTS_PAPER_BRIDGE_SECRET", encoded_secret)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -185,7 +190,7 @@ pub(crate) fn spawn_server(
     }
     let mut child = command.spawn().map_err(|_| {
         failure(
-            "Paper could not start. Repair Java 21 and retry the server test.",
+            "Paper could not start with the private BadgerBots Java runtime. Select Verify & repair Java, then retry.",
             Vec::new(),
         )
     })?;

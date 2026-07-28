@@ -6,7 +6,10 @@ macOS is a supported development workstation, not evidence that a Windows instal
 
 1. Pull-request CI runs repository checks on Linux and Windows using pinned Node/pnpm and immutable action commits.
 2. Checkpoint 4 adds a Windows-only Tauri build job for an unsigned x64 NSIS artifact and SHA-256. Software-bill-of-materials generation and captured installer logs remain pending. MSI may be added for managed deployment requirements.
-3. Release jobs consume pinned/checksummed Java, Paper, plugin, and client-mod inputs. They never fetch an unversioned `latest` artifact while assembling a release.
+3. Release jobs consume pinned/checksummed Paper, plugin, and client-mod inputs. Host 0.8.0
+   acquires the exact Temurin 21.0.11+10 Windows x64 ZIP during graphical setup from its immutable
+   release URL, verifies the recorded vendor SHA-256 before extraction, and keeps it private.
+   Neither CI nor Host fetches an unversioned `latest` runtime.
 4. Unsigned artifacts are clearly labeled internal prototypes. Production release requires protected BadgerBots signing credentials, timestamping, signature verification, authenticated update manifests, and rollback evidence.
 5. CI artifacts are promoted only after manual test records on physical Windows 10 and Windows 11 machines reference the exact build ID and checksums.
 

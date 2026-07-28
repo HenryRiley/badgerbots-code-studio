@@ -7,6 +7,7 @@ use std::{
 use tauri::{Emitter, Manager};
 
 mod firewall;
+mod managed_java;
 mod onboarding;
 mod power;
 mod runtime;
@@ -429,7 +430,7 @@ fn configure_minecraft_server(
         &host,
         "server_configuration",
         &format!(
-            "Private Paper configuration saved on port {} with a {} GiB limit; {} detected.",
+            "Private Paper configuration saved on port {} with a {} GiB limit; {} will be installed inside Host next.",
             configuration.server_port, configuration.max_heap_gib, configuration.java_version
         ),
     )?;
@@ -443,6 +444,7 @@ fn configure_minecraft_server(
 
 #[tauri::command]
 async fn prepare_runtime_artifacts(
+    app: tauri::AppHandle,
     runtime: tauri::State<'_, RuntimeStore>,
     host: tauri::State<'_, HostStore>,
 ) -> Result<HostSnapshot, String> {
@@ -460,7 +462,11 @@ async fn prepare_runtime_artifacts(
             return Err("Complete the earlier Host setup steps first.".to_string());
         }
     }
-    let prepared = runtime.prepare_artifacts().await?;
+    let prepared = runtime
+        .prepare_artifacts_with_progress(&|event| {
+            let _ = app.emit("host-install-progress", event);
+        })
+        .await?;
     let mut snapshot = host
         .snapshot
         .lock()
@@ -470,7 +476,7 @@ async fn prepare_runtime_artifacts(
             "java" => {
                 artifact.status = "verified".to_string();
                 artifact.version = prepared.java_version.clone();
-                artifact.checksum = "system-version-probe".to_string();
+                artifact.checksum = prepared.java_sha256.clone();
             }
             "paper" => {
                 artifact.status = "verified".to_string();
@@ -488,7 +494,49 @@ async fn prepare_runtime_artifacts(
     push_diagnostic(
         &mut snapshot,
         "HOST_ARTIFACTS_VERIFIED",
-        "Pinned Paper and the bundled BadgerBots plugin passed verification; Java 21 passed a system version probe.",
+        if prepared.java_repaired {
+            "Private Java 21 was repaired; its pinned archive and installed files passed verification. Paper and the bundled plugin also passed."
+        } else {
+            "Private Java 21, pinned Paper, and the bundled BadgerBots plugin passed checksum verification."
+        },
+        "info",
+    );
+    host.persist(&snapshot)?;
+    Ok(snapshot.clone())
+}
+
+#[tauri::command]
+async fn repair_managed_java(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, RuntimeStore>,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    if manager.is_active() {
+        return Err("Stop the classroom server before verifying or repairing Java.".to_string());
+    }
+    let prepared = runtime
+        .prepare_artifacts_with_progress(&|event| {
+            let _ = app.emit("host-install-progress", event);
+        })
+        .await?;
+    let mut snapshot = host
+        .snapshot
+        .lock()
+        .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+    apply_prepared_artifacts(&mut snapshot, &prepared);
+    push_diagnostic(
+        &mut snapshot,
+        if prepared.java_repaired {
+            "MANAGED_JAVA_REPAIRED"
+        } else {
+            "MANAGED_JAVA_VERIFIED"
+        },
+        if prepared.java_repaired {
+            "The private Java 21 runtime was replaced from the pinned archive and every installed file passed verification."
+        } else {
+            "Every file in the private Java 21 runtime passed verification; no repair was needed."
+        },
         "info",
     );
     host.persist(&snapshot)?;
@@ -536,6 +584,7 @@ fn approve_minecraft_firewall(
 
 #[tauri::command]
 async fn test_minecraft_server(
+    app: tauri::AppHandle,
     runtime: tauri::State<'_, RuntimeStore>,
     host: tauri::State<'_, HostStore>,
 ) -> Result<HostSnapshot, String> {
@@ -561,7 +610,11 @@ async fn test_minecraft_server(
             );
         }
     }
-    let prepared = runtime.prepare_artifacts().await?;
+    let prepared = runtime
+        .prepare_artifacts_with_progress(&|event| {
+            let _ = app.emit("host-install-progress", event);
+        })
+        .await?;
     let launch = runtime.verified_server_launch()?;
     {
         let mut snapshot = host
@@ -573,7 +626,7 @@ async fn test_minecraft_server(
                 "java" => {
                     artifact.status = "verified".to_string();
                     artifact.version = prepared.java_version.clone();
-                    artifact.checksum = "system-version-probe".to_string();
+                    artifact.checksum = prepared.java_sha256.clone();
                 }
                 "paper" => {
                     artifact.status = "verified".to_string();
@@ -751,9 +804,14 @@ async fn start_minecraft_server(
     };
     let _ = app.emit("host-server-update", ());
 
-    let prepared = runtime.prepare_artifacts().await.inspect_err(|message| {
-        record_start_preflight_failure(&host, message, false);
-    })?;
+    let prepared = runtime
+        .prepare_artifacts_with_progress(&|event| {
+            let _ = app.emit("host-install-progress", event);
+        })
+        .await
+        .inspect_err(|message| {
+            record_start_preflight_failure(&host, message, false);
+        })?;
     let backup = (if sheep_city_reset_pending {
         runtime.verify_latest_world_backup()
     } else {
@@ -848,6 +906,7 @@ fn stop_minecraft_server(
 
 #[tauri::command]
 async fn recover_minecraft_server(
+    app: tauri::AppHandle,
     runtime: tauri::State<'_, RuntimeStore>,
     manager: tauri::State<'_, ServerManager>,
     host: tauri::State<'_, HostStore>,
@@ -871,7 +930,11 @@ async fn recover_minecraft_server(
             .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
         snapshot.backup.operation.clone()
     };
-    let prepared = runtime.prepare_artifacts().await?;
+    let prepared = runtime
+        .prepare_artifacts_with_progress(&|event| {
+            let _ = app.emit("host-install-progress", event);
+        })
+        .await?;
     let backup = match interrupted_operation.as_deref() {
         Some(operation) if operation.starts_with("restore-in-progress:") => runtime
             .restore_world_backup(
@@ -1119,7 +1182,7 @@ fn apply_prepared_artifacts(snapshot: &mut HostSnapshot, prepared: &runtime::Art
             "java" => {
                 artifact.status = "verified".to_string();
                 artifact.version = prepared.java_version.clone();
-                artifact.checksum = "system-version-probe".to_string();
+                artifact.checksum = prepared.java_sha256.clone();
             }
             "paper" => {
                 artifact.status = "verified".to_string();
@@ -1368,6 +1431,7 @@ pub fn run() {
             probe_host_hardware,
             configure_minecraft_server,
             prepare_runtime_artifacts,
+            repair_managed_java,
             approve_minecraft_firewall,
             test_minecraft_server,
             start_minecraft_server,

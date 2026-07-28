@@ -114,6 +114,13 @@ any restored world directory all skip layout writes. Physical Windows evidence m
 an intact snapshot and a visibly modified snapshot, restarting Paper after each restore to prove
 startup does not overwrite either state.
 
+Host 0.8.0 adds private Java runtime tests for safe single-root ZIP extraction, traversal refusal,
+and installed-file checksum damage detection. Windows CI must compile the Windows-only downloader,
+bounded extraction, atomic activation, hidden process flags, and exact private `java.exe` launch.
+Physical Windows evidence must additionally cover first download, visible progress, automatic
+repair after deleting/changing a runtime file, unchanged system Java/PATH state, and Paper startup
+from the private executable.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

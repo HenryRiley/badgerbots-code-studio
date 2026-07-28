@@ -1,7 +1,7 @@
 # Checkpoint 15: managed server configuration
 
-Status: graphical configuration, artifacts, firewall, test-server, managed-lifecycle, and
-world-recovery slices implemented;
+Status: graphical configuration, private Java/artifact installation and repair, firewall,
+test-server, managed-lifecycle, and world-recovery slices implemented;
 physical Windows verification remains required
 
 ## Working in the repository
@@ -10,14 +10,26 @@ physical Windows verification remains required
   item.
 - The form collects and validates the teacher Minecraft Java username, port, bounded server memory,
   and explicit Minecraft EULA acceptance.
-- The native layer independently validates every field, checks for Java 21 without opening a
-  command window, and returns actionable errors in the app.
+- The native layer independently validates every field and returns actionable errors in the app.
 - Host atomically creates an application-local runtime configuration with online authentication,
   disabled RCON/query, bounded view/simulation distances, and isolated bridge/backup directories.
 - Successful preparation completes both server configuration and teacher Minecraft mapping, then
   visibly advances to scoped firewall approval.
 - Host downloads the immutable pinned Paper 1.21.11 build, enforces the expected size and SHA-256,
   and never installs a failed download.
+- Host downloads the free pinned Eclipse Temurin JRE 21.0.11+10 Windows x64 ZIP during graphical
+  setup, enforces its 64 MiB archive and 256 MiB expansion bounds, and checks vendor SHA-256
+  `be26677aaa20b39a62edcaab4c8857a8b76673b0f45abc0b6143b142b62717e4`
+  before extracting.
+- Java stays below `minecraft-runtime/managed-java`; Host does not invoke an MSI or read/change
+  global Java, PATH, `JAVA_HOME`, Java registry entries, or file associations.
+- Host rejects unsafe ZIP paths, links, multiple roots, unexpected file counts, and missing
+  `bin/java.exe`/release metadata. It records and rechecks every installed file by size and
+  SHA-256.
+- Every setup test and normal Paper start automatically verifies or repairs that private runtime.
+  **Verify & repair Java** exposes the operation on demand while Paper is stopped.
+- Download/check/install/repair phase, byte count, percentage, and outcome are visible inside Host.
+  Paper's process is created only from the verified private `java.exe`.
 - Windows CI compiles/tests the BadgerBots Paper plugin and embeds it in the Host installer. Host
   verifies its JAR shape and records its SHA-256 when installing it.
 - A configuration-only recovery snapshot is created before first server launch.
@@ -52,6 +64,8 @@ physical Windows verification remains required
 - Rust tests cover native validation and the restricted `server.properties` policy.
 - Rust tests cover checksum mismatch, JAR rejection, privileged-port rejection, and exact
   private-network TCP firewall parameters.
+- Rust tests cover private Java ZIP extraction, path-escape refusal, and installed-file damage
+  detection.
 - Rust tests cover required Paper/plugin/bridge readiness signals and server-log redaction.
 - Rust tests cover supervisor state updates, crash recovery requirement, and the 80-line console
   bound.
@@ -64,22 +78,23 @@ physical Windows verification remains required
 
 ## Manual Windows verification
 
-1. Install BadgerBots Host 0.7.2 over the existing build and launch it from Start.
+1. Install BadgerBots Host 0.8.0 over the existing build and launch it from Start.
 2. Continue the retained setup. At Step 4, enter the exact teacher Minecraft Java username.
 3. Keep port `25565` and `4 GiB` unless the local environment requires another non-privileged port.
 4. Open and accept the Minecraft EULA, then select **Prepare server**.
-5. Confirm no Command Prompt opens. With Java 21 available, the wizard should advance past both
+5. Confirm no Command Prompt opens. No system Java installation is required. The wizard should advance past both
    **Server configuration** and **Teacher Minecraft mapping** to **Scoped firewall approval**.
 6. Close and reopen Host; confirm those completed steps remain complete.
-7. Select **Install verified server files**. Confirm it downloads Paper, verifies all three runtime
-   rows, and does not open a terminal.
+7. Select **Install verified server files**. Confirm the in-app panel shows Java checking,
+   download bytes/percentage, checksum verification, private installation, and completion. It
+   should then download Paper, verify all three runtime rows, and never open a terminal.
 8. Select **Approve private-network access**, accept the UAC prompt, and confirm the wizard advances
    to **Test server**.
 9. In Windows Defender Firewall with Advanced Security, confirm the BadgerBots rule is inbound TCP,
    port `25565` (or the configured port), and Private profile only.
 10. Close and reopen Host. Confirm artifact evidence and completed firewall state remain.
-11. If Java 21 is missing, the network is offline, UAC is cancelled, or the checksum is wrong,
-    confirm the error appears inside Host and the related readiness step is not falsely completed.
+11. If the network is offline, UAC is cancelled, or an artifact checksum is wrong, confirm the
+    error appears inside Host and the related readiness step is not falsely completed.
 12. At **Test server**, select **Run server test**. Confirm no Command Prompt or PowerShell window
     opens. First launch may take up to three minutes.
 13. Confirm Host reports that Paper, the Sheep City plugin, authenticated bridge, local port, and
@@ -116,12 +131,27 @@ physical Windows verification remains required
 27. Create more than five backups and confirm the displayed retained count stays at five.
 28. Copy and alter a file inside the newest backup on a disposable test installation. Confirm
     Restore fails with a SHA-256 error and current worlds remain untouched.
+29. With Paper stopped, open
+    `%LOCALAPPDATA%\\org.badgerbots.codestudio.host\\minecraft-runtime\\managed-java` (the exact
+    Tauri app-data parent can vary by installer context), rename `bin\\java.exe` inside the
+    versioned runtime, then select **Verify & repair Java**. Confirm repair progress appears only
+    in Host, the file returns, all artifacts remain Verified, and no terminal opens.
+30. Repeat the damage, then select **Start classroom server** instead. Confirm automatic repair
+    appears in Host before Paper starts successfully.
+31. In PowerShell, run `where.exe java` only as test evidence before and after the repair. The
+    output must be identical (including no output if Java is not globally installed). Do not use
+    PowerShell for setup.
+32. In Task Manager, inspect the running Paper process command/executable path and confirm it is
+    the BadgerBots private
+    `managed-java\\temurin-21.0.11+10-windows-x64\\bin\\java.exe`, not a system Java path.
 
 ## Not yet claimed
 
-- Host does not yet provide an encrypted/compressed final-retention export, managed Java
-  distribution, firewall repair/removal, or signed update/repair behavior.
+- Host does not yet provide an encrypted/compressed final-retention export, firewall
+  repair/removal, or signed application-update behavior.
 - Hard-killing Host itself or losing power still requires a physical orphan-process and world
   integrity drill.
-- The Java 21 runtime is version-probed but not yet a privately managed checksummed distribution.
-- Checkpoint 15 continues with managed Java and repair/uninstall behavior.
+- Private Java install/repair is implemented, but missing/corrupt-runtime and uninstall cleanup
+  still require the physical Windows checks above.
+- Checkpoint 15 continues with firewall repair/removal, application updates, and uninstall
+  lifecycle evidence.
