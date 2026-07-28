@@ -992,15 +992,29 @@ function OnboardingWizard(props: {
             <input
               type="password"
               required
-              minLength={12}
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
           </label>
-          <button className="primary-button" disabled={props.busy}>
-            Sign in
-          </button>
+          <div className="button-row">
+            <button className="primary-button" disabled={props.busy}>
+              Sign in
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={props.busy}
+              onClick={() =>
+                void props.perform(async () => {
+                  props.onConfigured(await gateway.clearServiceConfiguration());
+                  return "Enter the current classroom service connection.";
+                })
+              }
+            >
+              Change service connection
+            </button>
+          </div>
         </form>
       </section>
     );

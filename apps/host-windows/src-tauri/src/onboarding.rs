@@ -1,4 +1,4 @@
-use reqwest::{Client, Url};
+use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -199,8 +199,8 @@ impl OnboardingStore {
     }
 
     pub async fn sign_in(&self, email: String, password: String) -> Result<SignInResult, String> {
-        validate_email(&email)?;
-        if password.len() < 12 || password.len() > 256 {
+        let email = normalize_email(&email)?;
+        if password.is_empty() || password.len() > 256 {
             return Err("Enter the instructor password created during secure setup.".to_string());
         }
         let (service_url, publishable_key) = self.service_config()?;
@@ -212,9 +212,19 @@ impl OnboardingStore {
             .json(&json!({ "email": email, "password": password }))
             .send()
             .await
-            .map_err(|_| "The Host could not reach the classroom service.".to_string())?;
-        if !response.status().is_success() {
-            return Err("Instructor sign-in failed. Check the email and password.".to_string());
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "Instructor sign-in timed out. Check the internet connection and try again."
+                        .to_string()
+                } else {
+                    "The Host could not reach the classroom service. Check the internet connection and try again."
+                        .to_string()
+                }
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.bytes().await.unwrap_or_default();
+            return Err(auth_failure_message(status, &body));
         }
         let auth_response = response
             .json::<AuthResponse>()
@@ -253,6 +263,30 @@ impl OnboardingStore {
             onboarding: self.view()?,
             profile,
         })
+    }
+
+    pub fn clear_service_configuration(&self) -> Result<OnboardingView, String> {
+        let mut config = self
+            .config
+            .lock()
+            .map_err(|_| "Host onboarding state is temporarily unavailable.".to_string())?;
+        if config.host_id.is_some() {
+            return Err(
+                "This Host is already paired. Unpair it before changing the classroom service."
+                    .to_string(),
+            );
+        }
+        config.service_url.clear();
+        config.publishable_key.clear();
+        config.instructor_email = None;
+        persist_json_atomic(&self.config_path, &*config)?;
+        drop(config);
+        *self
+            .auth
+            .lock()
+            .map_err(|_| "Host authentication state is temporarily unavailable.".to_string())? =
+            None;
+        self.view()
     }
 
     pub async fn pair(
@@ -436,6 +470,66 @@ fn validate_email(value: &str) -> Result<(), String> {
         return Err("Enter a valid instructor email address.".to_string());
     }
     Ok(())
+}
+
+fn normalize_email(value: &str) -> Result<String, String> {
+    validate_email(value)?;
+    Ok(value.trim().to_ascii_lowercase())
+}
+
+fn auth_failure_message(status: StatusCode, body: &[u8]) -> String {
+    let payload = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
+    let code = ["code", "error_code", "error"]
+        .iter()
+        .find_map(|field| payload.get(field).and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let detail = ["msg", "message", "error_description"]
+        .iter()
+        .find_map(|field| payload.get(field).and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    match code.as_str() {
+        "email_not_confirmed" => {
+            "This instructor email has not been confirmed. Open its Supabase confirmation email, then try again."
+                .to_string()
+        }
+        "user_banned" => {
+            "This instructor account is disabled. Ask the BadgerBots account owner to restore access."
+                .to_string()
+        }
+        "over_request_rate_limit" | "over_email_send_rate_limit" => {
+            "Too many sign-in attempts were made. Wait a few minutes, then try again.".to_string()
+        }
+        "email_provider_disabled" | "provider_disabled" => {
+            "Instructor password sign-in is disabled in the classroom service. An administrator must enable email authentication."
+                .to_string()
+        }
+        "invalid_credentials" | "user_not_found" => {
+            "The instructor email or password was not accepted. Use the email shown in Supabase Authentication, or reset that account’s password."
+                .to_string()
+        }
+        _ if status == StatusCode::TOO_MANY_REQUESTS => {
+            "Too many sign-in attempts were made. Wait a few minutes, then try again.".to_string()
+        }
+        _ if detail.contains("api key")
+            || detail.contains("apikey")
+            || code == "bad_jwt"
+            || code == "no_authorization" =>
+        {
+            "The classroom service key was rejected. Select “Change service connection” and enter this Supabase project’s current Project URL and Publishable key."
+                .to_string()
+        }
+        _ if status.is_server_error() => {
+            "The classroom authentication service is temporarily unavailable. Try again shortly; if it continues, check the Supabase project status."
+                .to_string()
+        }
+        _ => {
+            "Instructor sign-in was rejected by the classroom service. Verify the account in Supabase Authentication and try again."
+                .to_string()
+        }
+    }
 }
 
 fn validate_opaque_id(value: &str, label: &str) -> Result<(), String> {
@@ -644,6 +738,46 @@ mod tests {
         .unwrap();
         assert_eq!(profile.memberships[0].organization_id, "organization-1");
         assert_eq!(profile.locations[0].organization_id, "organization-1");
+    }
+
+    #[test]
+    fn normalizes_instructor_email_before_authentication() {
+        assert_eq!(
+            normalize_email("  Instructor@BadgerBots.ORG  ").unwrap(),
+            "instructor@badgerbots.org"
+        );
+    }
+
+    #[test]
+    fn maps_auth_failures_to_actionable_safe_messages() {
+        assert!(
+            auth_failure_message(
+                StatusCode::BAD_REQUEST,
+                br#"{"code":"invalid_credentials","msg":"Invalid login credentials"}"#
+            )
+            .contains("email or password")
+        );
+        assert!(
+            auth_failure_message(
+                StatusCode::BAD_REQUEST,
+                br#"{"error_code":"email_not_confirmed","msg":"Email not confirmed"}"#
+            )
+            .contains("has not been confirmed")
+        );
+        assert!(
+            auth_failure_message(
+                StatusCode::UNAUTHORIZED,
+                br#"{"message":"Invalid API key"}"#
+            )
+            .contains("Change service connection")
+        );
+        assert!(
+            auth_failure_message(StatusCode::TOO_MANY_REQUESTS, b"not-json").contains("Too many")
+        );
+        assert!(
+            auth_failure_message(StatusCode::SERVICE_UNAVAILABLE, b"")
+                .contains("temporarily unavailable")
+        );
     }
 
     #[cfg(windows)]

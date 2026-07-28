@@ -285,6 +285,13 @@ fn configure_classroom_service(
 }
 
 #[tauri::command]
+fn clear_classroom_service(
+    onboarding: tauri::State<'_, OnboardingStore>,
+) -> Result<OnboardingView, String> {
+    onboarding.clear_service_configuration()
+}
+
+#[tauri::command]
 async fn sign_in_instructor(
     email: String,
     password: String,
@@ -1425,6 +1432,7 @@ pub fn run() {
             complete_setup_step,
             host_onboarding_status,
             configure_classroom_service,
+            clear_classroom_service,
             sign_in_instructor,
             pair_classroom_host,
             sign_out_instructor,

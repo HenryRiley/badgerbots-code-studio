@@ -12,7 +12,7 @@ with restricted server settings. The next graphical step downloads Eclipse Temur
 never reads or changes global Java, `JAVA_HOME`, PATH, the Java registry, or an existing Minecraft
 server.
 
-Host 0.8.0 can download the pinned Java and Paper builds, verify their SHA-256 values, install the
+Host 0.8.1 can download the pinned Java and Paper builds, verify their SHA-256 values, install the
 plugin embedded by Windows CI, create a configuration recovery snapshot, and request a
 Private-network-only Windows firewall rule through a normal UAC prompt. Java download, installed
 file verification, and repair progress stay inside the app without PowerShell.
@@ -49,6 +49,13 @@ PATH.
 Host does **not** yet create the encrypted/compressed final retention export, remove/repair the
 firewall rule, or install an authenticated application update. Forced process termination,
 power-loss recovery, Java repair, and uninstall cleanup still need physical Windows drills.
+
+Host sign-in trims and normalizes the instructor email and delegates password policy to Supabase
+instead of imposing a separate local minimum. Supabase Auth error codes are mapped to specific,
+safe recovery guidance for invalid credentials, unconfirmed or disabled accounts, rate limiting,
+service outages, and rejected public keys. An unpaired Host can select **Change service
+connection** on the sign-in screen to replace a stale Project URL or Publishable key without
+PowerShell or deleting application data.
 
 ## Browser preview
 
