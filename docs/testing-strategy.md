@@ -127,6 +127,14 @@ email whitespace, a valid account whose current password is shorter than twelve 
 invalid credentials, an unconfirmed account, and recovery from a deliberately stale Publishable
 key using only **Change service connection** in the Host UI.
 
+The recreated-instructor recovery slice adds migration contract tests for confirmed-email
+matching, deleted-prior-identity enforcement, service-role-only execution, and required audit
+records. Real Supabase verification must delete a disposable instructor Auth identity, recreate
+the same confirmed email, deploy migration `0007` and `classroom-api`, then prove the original
+instructor/membership IDs are retained. It must also prove recovery fails while the prior Auth UUID
+still exists. Windows 10 and Windows 11 use the same HTTPS flow; both remain installer smoke-test
+targets.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

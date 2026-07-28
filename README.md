@@ -35,7 +35,10 @@ only for a genuinely new world; normal starts and restored snapshots preserve bl
 Host sign-in screen now accepts every non-empty password supported by the configured Supabase
 project, normalizes instructor email input, explains Supabase Auth failures without exposing
 account secrets, and lets an unpaired installation replace a stale Project URL or Publishable key
-inside the graphical wizard.
+inside the graphical wizard. The control plane can also recover an instructor whose Supabase Auth
+account was deliberately deleted and recreated, but only when the replacement has the exact
+confirmed email, the prior Auth UUID is absent, and the service-role-only audited migration is
+deployed.
 The encrypted final-retention export, authenticated application updates, firewall cleanup, and
 physical installer repair evidence remain open. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
