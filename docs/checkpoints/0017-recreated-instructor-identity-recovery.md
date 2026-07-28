@@ -28,12 +28,17 @@ lookup after authentication.
 
 ## Deployment
 
-1. Apply `database/providers/supabase/0007_instructor_identity_recovery.sql` to the existing
-   Supabase project.
-2. Deploy the updated `classroom-api` Edge Function.
+1. From protected release automation, apply
+   `database/providers/supabase/0007_instructor_identity_recovery.sql` to the existing Supabase
+   project.
+2. Deploy the updated `classroom-api` Edge Function from the same reviewed commit.
 3. Keep public instructor signup disabled.
 4. Retry sign-in from the already-installed Host 0.8.1; no new Windows installer is required for
    this cloud-side correction.
+
+The teacher laptop must not clone this repository or receive a database URL, Supabase access token,
+Secret key, CLI, or migration script. The protected **Deploy Supabase production** GitHub workflow
+is the intended operational path.
 
 ## Verification
 

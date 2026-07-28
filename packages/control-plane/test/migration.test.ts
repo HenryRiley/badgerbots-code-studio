@@ -155,4 +155,17 @@ describe("portable control-plane migration", () => {
       "grant execute on function public.rebind_deleted_instructor_identity(uuid, text) to authenticated",
     );
   });
+
+  it("deploys cloud changes centrally without placing admin secrets in installers", async () => {
+    const workflow = await readFile(resolve(root, ".github/workflows/deploy-supabase.yml"), "utf8");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("environment: production");
+    expect(workflow).toContain("secrets.SUPABASE_ACCESS_TOKEN");
+    expect(workflow).toContain("secrets.SUPABASE_DB_URL");
+    expect(workflow).toContain("secrets.SUPABASE_PROJECT_REF");
+    expect(workflow).toContain("0007_instructor_identity_recovery.sql");
+    expect(workflow).toContain("functions deploy classroom-api");
+    expect(workflow).not.toContain("VITE_BADGERBOTS_SUPABASE_SECRET");
+    expect(workflow).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+  });
 });

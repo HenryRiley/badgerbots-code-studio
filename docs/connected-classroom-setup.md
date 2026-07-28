@@ -2,6 +2,12 @@
 
 This is an internal prototype procedure. Use fake camper names. It does not authorize use with real children.
 
+The repository and PowerShell steps in this guide are developer/cloud-administrator procedures.
+They do not belong on a camp teacher laptop. A normal teacher installs BadgerBots Host, opens it,
+and signs in. The Host installer contains only browser-safe Project URL/Publishable key values;
+database and Edge Function changes are deployed centrally and must never be bundled with a
+Secret/service-role credential.
+
 Checkpoint 14 replaces the instructor-facing Host pairing environment variables with the native
 Windows wizard. The CLI steps below remain only for developers testing the unbundled Paper runtime.
 After updating to Checkpoint 14, redeploy `classroom-api` once so the restricted native onboarding
@@ -56,6 +62,24 @@ The recovery preserves the existing organization, location, session, and Host re
 an audit record. It does not create a second organization or rerun the one-time owner bootstrap.
 If the prior Auth user still exists, use that identity or deliberately remove the obsolete user;
 the recovery will not take its access.
+
+### Preferred central deployment
+
+After `.github/workflows/deploy-supabase.yml` is merged, configure the GitHub `production`
+environment once with protected secrets:
+
+- `SUPABASE_ACCESS_TOKEN`: a Supabase personal access token used only by release automation;
+- `SUPABASE_PROJECT_REF`: the project reference, not a key; and
+- `SUPABASE_DB_URL`: the protected PostgreSQL connection URL from Supabase.
+
+Require repository-owner approval on the `production` environment. Then open GitHub Actions,
+choose **Deploy Supabase production**, select **Run workflow**, and enter `deploy`. The workflow
+applies migration `0007` with stop-on-error behavior and then deploys `classroom-api`. It uses a
+single concurrency lock so two production deployments cannot overlap.
+
+These secrets stay in GitHub and are not passed to Host or Connect builds. Normal instructors and
+camp laptops do not need Git, Node.js, pnpm, PowerShell, the repository, or Supabase administrator
+access.
 
 The function defaults to the four local Code Studio origins. Before a hosted Web deployment, add its exact HTTPS origin:
 

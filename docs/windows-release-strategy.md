@@ -2,6 +2,19 @@
 
 macOS is a supported development workstation, not evidence that a Windows installer works.
 
+## Cloud prerequisite
+
+Windows installers consume the centrally deployed classroom service; they are not database
+deployment tools. Before distributing an installer, a repository owner runs the protected
+**Deploy Supabase production** GitHub workflow and verifies its migration and Edge Function steps.
+Supabase access tokens and database URLs must never be compiled into, copied beside, or requested
+by BadgerBots Host or Connect.
+
+The Host installer may embed only `BADGERBOTS_SUPABASE_URL` and
+`BADGERBOTS_SUPABASE_PUBLISHABLE_KEY` through GitHub repository variables. Those are browser-safe
+connection values. A release build must verify both variables are configured before it can be
+called teacher-ready.
+
 ## Build path
 
 1. Pull-request CI runs repository checks on Linux and Windows using pinned Node/pnpm and immutable action commits.
