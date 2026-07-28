@@ -21,7 +21,7 @@ Checkpoint 14 begins release productization: the native Windows Host now owns in
 location selection, secure pairing, current-user protected credential storage, and hardware
 probing inside its graphical wizard. The current Checkpoint 15 slices add managed server
 configuration, pinned Paper/plugin verification, configuration recovery evidence, and scoped
-Private-network firewall approval. Host 0.8.0 now downloads and verifies a pinned free Temurin
+Private-network firewall approval. Host 0.8.1 now downloads and verifies a pinned free Temurin
 Java 21 runtime into its private application-data directory, repairs missing or changed runtime
 files through the graphical UI, and launches Paper with that exact private executable without
 changing global Java. It also runs a real bounded Paper/plugin/bridge readiness test and owns
@@ -32,7 +32,11 @@ transactional selectable-snapshot restore, and a safe Sheep City reset. Recovery
 automatic, manual, reset, and crash-recovery snapshots so damage is not accidentally restored just
 because it was backed up most recently. Paper plugin 0.6.1 creates the original Sheep City layout
 only for a genuinely new world; normal starts and restored snapshots preserve block changes. The
-encrypted final-retention export, authenticated application updates, firewall cleanup, and
+Host sign-in screen now accepts every non-empty password supported by the configured Supabase
+project, normalizes instructor email input, explains Supabase Auth failures without exposing
+account secrets, and lets an unpaired installation replace a stale Project URL or Publishable key
+inside the graphical wizard.
+The encrypted final-retention export, authenticated application updates, firewall cleanup, and
 physical installer repair evidence remain open. See the
 [playable prototype guide](docs/playable-paper-prototype.md),
 [risk register](docs/risk-register.md), [requirements traceability](docs/requirements-traceability.md),

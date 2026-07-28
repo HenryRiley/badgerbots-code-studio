@@ -121,6 +121,12 @@ Physical Windows evidence must additionally cover first download, visible progre
 repair after deleting/changing a runtime file, unchanged system Java/PATH state, and Paper startup
 from the private executable.
 
+Host 0.8.1 adds native tests for email normalization and safe mapping of Supabase Auth codes and
+HTTP failures. Physical Windows verification must cover a successful sign-in with surrounding
+email whitespace, a valid account whose current password is shorter than twelve characters,
+invalid credentials, an unconfirmed account, and recovery from a deliberately stale Publishable
+key using only **Change service connection** in the Host UI.
+
 ## Required real-environment tests
 
 - Windows 10/11 Host installation and firewall prompts.

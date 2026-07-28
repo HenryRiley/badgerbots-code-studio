@@ -21,6 +21,7 @@ export interface HostGateway {
   load(): Promise<HostSnapshot>;
   onboarding(): Promise<HostOnboardingView>;
   configureService(serviceUrl: string, publishableKey: string): Promise<HostOnboardingView>;
+  clearServiceConfiguration(): Promise<HostOnboardingView>;
   signIn(email: string, password: string): Promise<SignInResult>;
   pairHost(
     organizationId: string,
@@ -72,6 +73,15 @@ export function createHostGateway(): HostGateway {
         ...onboarding,
         serviceConfigured: true,
         serviceUrl,
+      };
+      return Promise.resolve(structuredClone(onboarding));
+    },
+    clearServiceConfiguration: () => {
+      onboarding = {
+        serviceConfigured: false,
+        signedIn: false,
+        paired: false,
+        credentialProtection: "Preview only — no credential is stored",
       };
       return Promise.resolve(structuredClone(onboarding));
     },
@@ -273,6 +283,7 @@ const nativeGateway: HostGateway = {
   onboarding: () => invoke<HostOnboardingView>("host_onboarding_status"),
   configureService: (serviceUrl, publishableKey) =>
     invoke<HostOnboardingView>("configure_classroom_service", { serviceUrl, publishableKey }),
+  clearServiceConfiguration: () => invoke<HostOnboardingView>("clear_classroom_service"),
   signIn: (email, password) => invoke<SignInResult>("sign_in_instructor", { email, password }),
   pairHost: (organizationId, locationId, displayName) =>
     invoke<HostOnboardingView>("pair_classroom_host", {
