@@ -1,10 +1,12 @@
-use crate::world_backup::{self, WorldBackupReport};
+use crate::{
+    managed_java::{self, InstallProgress},
+    world_backup::{self, WorldBackupReport},
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -32,6 +34,8 @@ pub struct RuntimeConfiguration {
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactPreparation {
     pub java_version: String,
+    pub java_sha256: String,
+    pub java_repaired: bool,
     pub paper_version: String,
     pub paper_sha256: String,
     pub plugin_version: String,
@@ -41,6 +45,7 @@ pub struct ArtifactPreparation {
 #[derive(Debug, Clone)]
 pub struct ServerLaunch {
     pub runtime_directory: PathBuf,
+    pub java_path: PathBuf,
     pub paper_path: PathBuf,
     pub bridge_directory: PathBuf,
     pub configuration: RuntimeConfiguration,
@@ -68,7 +73,6 @@ impl RuntimeStore {
         eula_accepted: bool,
     ) -> Result<RuntimeConfiguration, String> {
         validate_configuration(&teacher_username, server_port, max_heap_gib, eula_accepted)?;
-        let java_version = detect_java_21()?;
         for child in ["plugins", "bridge/inbox", "bridge/outbox", "backups"] {
             fs::create_dir_all(self.directory.join(child)).map_err(|_| {
                 "The managed Minecraft directory could not be prepared.".to_string()
@@ -79,7 +83,7 @@ impl RuntimeStore {
             teacher_username,
             server_port,
             max_heap_gib,
-            java_version,
+            java_version: format!("{} (installation pending)", managed_java::JAVA_VERSION),
             eula_accepted,
         };
         persist_text_atomic(&self.directory.join("eula.txt"), "eula=true\n")?;
@@ -93,13 +97,16 @@ impl RuntimeStore {
         Ok(configuration)
     }
 
-    pub async fn prepare_artifacts(&self) -> Result<ArtifactPreparation, String> {
+    pub async fn prepare_artifacts_with_progress(
+        &self,
+        progress: &(dyn Fn(InstallProgress) + Send + Sync),
+    ) -> Result<ArtifactPreparation, String> {
         if !self.directory.join("badgerbots-runtime.json").is_file() {
             return Err(
                 "Complete server configuration before installing server files.".to_string(),
             );
         }
-        let java_version = detect_java_21()?;
+        let java = managed_java::ensure(&self.directory, progress).await?;
         validate_jar(EMBEDDED_PLUGIN, "BadgerBots plugin")?;
 
         let paper_path = self.directory.join("paper-1.21.11-132.jar");
@@ -108,7 +115,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.7.2 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.8.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
@@ -154,7 +161,9 @@ impl RuntimeStore {
             persist_bytes_atomic(&plugin_path, EMBEDDED_PLUGIN)?;
         }
         let manifest = ArtifactPreparation {
-            java_version,
+            java_version: java.version,
+            java_sha256: java.archive_sha256,
+            java_repaired: java.repaired,
             paper_version: PAPER_VERSION.to_string(),
             paper_sha256: PAPER_SHA256.to_string(),
             plugin_version: PLUGIN_VERSION.to_string(),
@@ -167,6 +176,19 @@ impl RuntimeStore {
             &serialized,
         )?;
         self.create_configuration_backup(&manifest)?;
+        progress(InstallProgress {
+            phase: "complete".to_string(),
+            message: if manifest.java_repaired {
+                "Private Java 21 was repaired; Java, Paper, and the BadgerBots plugin are verified."
+                    .to_string()
+            } else {
+                "Private Java 21, Paper, and the BadgerBots plugin are verified.".to_string()
+            },
+            downloaded_bytes: 0,
+            total_bytes: None,
+            percent: Some(100),
+            repair: manifest.java_repaired,
+        });
         Ok(manifest)
     }
 
@@ -219,9 +241,20 @@ impl RuntimeStore {
                     .to_string(),
             );
         }
+        let java = managed_java::verify(&self.directory).map_err(|_| {
+            "The private Java 21 runtime is missing or damaged. Select Verify & repair Java."
+                .to_string()
+        })?;
+        if java.archive_sha256 != artifacts.java_sha256 {
+            return Err(
+                "The private Java 21 runtime does not match the approved artifact record. Select Verify & repair Java."
+                    .to_string(),
+            );
+        }
         self.verify_configuration_backup()?;
         Ok(ServerLaunch {
             runtime_directory: self.directory.clone(),
+            java_path: java.executable_path,
             paper_path,
             bridge_directory: self.directory.join("bridge"),
             configuration,
@@ -378,38 +411,6 @@ fn validate_configuration(
         return Err("Read and accept the Minecraft EULA before preparing the server.".to_string());
     }
     Ok(())
-}
-
-pub fn detect_java_21() -> Result<String, String> {
-    let mut command = Command::new("java");
-    command.arg("-version");
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
-    let output = command.output().map_err(|_| {
-        "Java 21 was not found. Install a Java 21 runtime, then try Prepare server again."
-            .to_string()
-    })?;
-    if !output.status.success() {
-        return Err(
-            "Java could not start successfully. Repair Java 21, then try again.".to_string(),
-        );
-    }
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let first_line = combined.lines().next().unwrap_or_default().trim();
-    if !first_line.contains("\"21") && !first_line.contains(" 21.") {
-        return Err(format!(
-            "Java 21 is required, but the detected runtime reported: {}",
-            first_line.chars().take(120).collect::<String>()
-        ));
-    }
-    Ok(first_line.chars().take(120).collect())
 }
 
 fn server_properties(configuration: &RuntimeConfiguration) -> String {

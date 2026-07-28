@@ -37,6 +37,15 @@ export interface ManagedArtifact {
   checksum: string;
 }
 
+export interface RuntimeInstallProgress {
+  phase: "checking" | "downloading" | "verifying" | "installing" | "complete";
+  message: string;
+  downloadedBytes: number;
+  totalBytes?: number;
+  percent?: number;
+  repair: boolean;
+}
+
 export interface DiagnosticEvent {
   id: string;
   timestamp: string;
