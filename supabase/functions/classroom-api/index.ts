@@ -853,20 +853,42 @@ async function hostAcknowledge(
 }
 
 async function requireInstructor(request: Request): Promise<InstructorContext> {
-  const authSubject = await authenticatedSubject(request);
+  const user = await authenticatedUser(request);
+  const authSubject = user.id;
   const { data, error } = await admin
     .from("instructors")
     .select("id")
     .eq("auth_subject", authSubject)
     .maybeSingle();
-  if (error || !data) {
+  if (error) throw databaseError();
+  if (data) return { authSubject, instructorId: data.id };
+
+  const confirmedEmail = user.email_confirmed_at ? user.email : undefined;
+  if (!confirmedEmail) {
     throw new ClassroomApiError(
       403,
       "forbidden",
       "Instructor access was not found.",
     );
   }
-  return { authSubject, instructorId: data.id };
+  const { data: recoveredInstructorId, error: recoveryError } = await admin.rpc(
+    "rebind_deleted_instructor_identity",
+    {
+      next_auth_subject: authSubject,
+      confirmed_email: confirmedEmail,
+    },
+  );
+  if (
+    recoveryError || typeof recoveredInstructorId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(recoveredInstructorId)
+  ) {
+    throw new ClassroomApiError(
+      403,
+      "instructor_identity_mismatch",
+      "This authenticated account is not linked to an instructor profile. If the Auth account was recreated, deploy the instructor identity recovery migration or ask an owner to restore the original account.",
+    );
+  }
+  return { authSubject, instructorId: recoveredInstructorId };
 }
 
 async function requireCamper(request: Request): Promise<CamperContext> {
@@ -1008,6 +1030,10 @@ async function assertSessionActive(sessionId: string): Promise<void> {
 }
 
 async function authenticatedSubject(request: Request): Promise<string> {
+  return (await authenticatedUser(request)).id;
+}
+
+async function authenticatedUser(request: Request) {
   const token = bearerToken(request);
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) {
@@ -1017,7 +1043,7 @@ async function authenticatedSubject(request: Request): Promise<string> {
       "Sign in again to continue.",
     );
   }
-  return data.user.id;
+  return data.user;
 }
 
 async function requireHost(

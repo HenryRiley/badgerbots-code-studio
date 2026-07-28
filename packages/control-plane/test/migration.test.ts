@@ -138,4 +138,21 @@ describe("portable control-plane migration", () => {
       "alter publication supabase_realtime add table public.classroom_commands",
     );
   });
+
+  it("recovers only a confirmed replacement for a deleted instructor identity", async () => {
+    const sql = await readFile(
+      resolve(root, "database/providers/supabase/0007_instructor_identity_recovery.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create or replace function public.rebind_deleted_instructor_identity");
+    expect(sql).toContain("email_confirmed_at is not null");
+    expect(sql).toContain("where id = prior_auth_subject");
+    expect(sql).toContain("raise exception 'prior auth identity still exists'");
+    expect(sql).toContain("'instructor_auth_subject_rebound'");
+    expect(sql).toContain("revoke all on function public.rebind_deleted_instructor_identity");
+    expect(sql).toContain("to service_role");
+    expect(sql).not.toContain(
+      "grant execute on function public.rebind_deleted_instructor_identity(uuid, text) to authenticated",
+    );
+  });
 });

@@ -14,3 +14,9 @@ The owner has manually validated the earlier prototype persistence against a Sup
 The repository itself does not create or modify external projects. For the connected classroom,
 apply portable migration `0005`, then provider overlay `0006`, deploy `classroom-api`, and follow
 `docs/connected-classroom-setup.md`.
+
+Provider migration `0007` adds fail-closed recovery when an administrator deletes and recreates an
+instructor in Supabase Auth. It may rebind the application profile only when the new Auth identity
+has the exact confirmed email, the prior Auth UUID no longer exists, and no other instructor uses
+the new UUID. The service-role-only function writes an organization audit record. Public
+instructor signup must remain disabled.
