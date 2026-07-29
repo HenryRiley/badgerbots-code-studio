@@ -37,6 +37,7 @@ export interface HostGateway {
   testServer(): Promise<HostSnapshot>;
   startServer(): Promise<HostSnapshot>;
   stopServer(): Promise<HostSnapshot>;
+  runCapacityBenchmark(strategy: "separate-worlds" | "shared-instances"): Promise<HostSnapshot>;
   recoverServer(): Promise<HostSnapshot>;
   createWorldBackup(): Promise<HostSnapshot>;
   restoreWorldBackup(backupId: string): Promise<HostSnapshot>;
@@ -237,6 +238,17 @@ export function createHostGateway(): HostGateway {
       };
       return Promise.resolve(structuredClone(snapshot));
     },
+    runCapacityBenchmark: (strategy) => {
+      snapshot = {
+        ...snapshot,
+        serverLogs: [
+          ...snapshot.serverLogs,
+          `[Paper] Started the 25-student ${strategy} benchmark.`,
+          `[Paper] BADGERBOTS_BENCHMARK_COMPLETE preview-${strategy}.json`,
+        ].slice(-80),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
     recoverServer: () => {
       snapshot = {
         ...snapshot,
@@ -306,6 +318,7 @@ const nativeGateway: HostGateway = {
   testServer: () => invoke<HostSnapshot>("test_minecraft_server"),
   startServer: () => invoke<HostSnapshot>("start_minecraft_server"),
   stopServer: () => invoke<HostSnapshot>("stop_minecraft_server"),
+  runCapacityBenchmark: (strategy) => invoke<HostSnapshot>("run_capacity_benchmark", { strategy }),
   recoverServer: () => invoke<HostSnapshot>("recover_minecraft_server"),
   createWorldBackup: () => invoke<HostSnapshot>("create_world_backup"),
   restoreWorldBackup: (backupId) => invoke<HostSnapshot>("restore_world_backup", { backupId }),

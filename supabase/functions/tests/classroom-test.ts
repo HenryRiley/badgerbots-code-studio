@@ -5,6 +5,8 @@ import {
   sheepCityStarterProgram,
   validateCamperName,
   validateClassroomProgram,
+  validateMinecraftUsername,
+  validateStableDevicePublicId,
 } from "../_shared/classroom.ts";
 
 Deno.test("classroom join codes omit ambiguous characters and normalize minimal names", () => {
@@ -64,6 +66,16 @@ Deno.test("native Host onboarding is restricted to authenticated setup actions",
   assertEquals(nativeHostOnboardingActionAllowed("join"), false);
   assertEquals(nativeHostOnboardingActionAllowed("queue_runtime"), false);
   assertEquals(nativeHostOnboardingActionAllowed("host_poll"), false);
+});
+
+Deno.test("device and Minecraft player identifiers are strict but rename-safe", () => {
+  assertEquals(
+    validateStableDevicePublicId("A9E5F7D1-CA6D-4B52-8E13-321963E81A52"),
+    "a9e5f7d1-ca6d-4b52-8e13-321963e81a52",
+  );
+  assertEquals(validateMinecraftUsername("Camper_17"), "Camper_17");
+  assertThrows(() => validateStableDevicePublicId("../shared-device"));
+  assertThrows(() => validateMinecraftUsername("name with spaces"));
 });
 
 function assertEquals(actual: unknown, expected: unknown): void {

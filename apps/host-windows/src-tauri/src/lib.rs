@@ -1027,6 +1027,41 @@ fn stop_minecraft_server(
 }
 
 #[tauri::command]
+fn run_capacity_benchmark(
+    strategy: String,
+    manager: tauri::State<'_, ServerManager>,
+    host: tauri::State<'_, HostStore>,
+) -> Result<HostSnapshot, String> {
+    {
+        let snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        if snapshot.server.lifecycle != "running" {
+            return Err("Start Paper and wait for Ready before running a benchmark.".to_string());
+        }
+    }
+    manager.request_capacity_benchmark(&strategy)?;
+    {
+        let mut snapshot = host
+            .snapshot
+            .lock()
+            .map_err(|_| "Host state is temporarily unavailable.".to_string())?;
+        push_diagnostic(
+            &mut snapshot,
+            "CAPACITY_BENCHMARK_STARTED",
+            &format!(
+                "The bounded 25-student {} benchmark started. Progress and the evidence path will appear in the built-in console.",
+                strategy
+            ),
+            "info",
+        );
+        host.persist(&snapshot)?;
+    }
+    host_snapshot(host)
+}
+
+#[tauri::command]
 async fn recover_minecraft_server(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, RuntimeStore>,
@@ -1561,6 +1596,7 @@ pub fn run() {
             test_minecraft_server,
             start_minecraft_server,
             stop_minecraft_server,
+            run_capacity_benchmark,
             recover_minecraft_server,
             create_world_backup,
             restore_world_backup,

@@ -1,6 +1,16 @@
 # BadgerBots Connect
 
-Checkpoint 5 Tauri 2 helper for fixed student laptops. The current slice creates a stable opaque device ID in native app-local storage, detects the standard Prism Launcher data root without editing it, models instructor-authorized Minecraft username mapping, validates managed-only profile repair plans, and displays readiness plus redacted diagnostics inside the application.
+Checkpoint 21 links the stable opaque device ID to the Web join flow. **Open coding console**
+launches the trusted Code Studio classroom URL in the default browser and includes only the
+device UUID; it never includes camper names, Microsoft credentials, or instructor secrets. The
+server resolves that UUID to the temporary enrollment and instructor-approved Minecraft username.
+The build-time `BADGERBOTS_WEB_URL` must be the HTTPS classroom URL (for example,
+`https://studio.example.org/classroom`). Local developer builds fall back to
+`http://127.0.0.1:3000/classroom`.
+
+The helper also detects the standard Prism Launcher data root without editing it, models
+instructor-authorized Minecraft username mapping, validates managed-only profile repair plans,
+and displays readiness plus redacted diagnostics inside the application.
 
 Installed release builds do not open a Windows Command Prompt. Operational information belongs in the in-app diagnostics panel. Developer builds may use their launching terminal.
 

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 use tauri::Manager;
 use uuid::Uuid;
@@ -101,6 +102,64 @@ fn connect_snapshot(app: tauri::AppHandle) -> Result<ConnectSnapshot, String> {
     })
 }
 
+#[tauri::command]
+fn open_coding_console(app: tauri::AppHandle) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("Connect data directory is unavailable: {error}"))?;
+    let identity = load_or_create_identity(&data_dir.join("device-identity.json"))?;
+    let base = option_env!("BADGERBOTS_WEB_URL")
+        .unwrap_or("http://127.0.0.1:3000/classroom")
+        .trim_end_matches('/');
+    if !safe_coding_console_url(base) {
+        return Err(
+            "This Connect build does not contain a trusted Code Studio web address. Install a current BadgerBots Connect build."
+                .to_string(),
+        );
+    }
+    let separator = if base.contains('?') { '&' } else { '?' };
+    let url = format!("{base}{separator}bbDevice={}", identity.device_id);
+    open_system_browser(&url)?;
+    Ok("Code Studio opened in the default browser with this device securely linked.".to_string())
+}
+
+fn safe_coding_console_url(value: &str) -> bool {
+    value.starts_with("https://")
+        || value.starts_with("http://127.0.0.1:")
+        || value.starts_with("http://localhost:")
+}
+
+#[cfg(windows)]
+fn open_system_browser(url: &str) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    Command::new("rundll32.exe")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(url)
+        .creation_flags(0x0800_0000)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "Windows could not open the default browser.".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn open_system_browser(url: &str) -> Result<(), String> {
+    Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "macOS could not open the default browser.".to_string())
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn open_system_browser(url: &str) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|_| "The default browser could not be opened.".to_string())
+}
+
 fn load_or_create_identity(path: &Path) -> Result<PersistedIdentity, String> {
     if path.exists() {
         let content = fs::read_to_string(path)
@@ -183,7 +242,10 @@ fn candidate(kind: &str, label: &str, root: PathBuf) -> LauncherCandidate {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![connect_snapshot])
+        .invoke_handler(tauri::generate_handler![
+            connect_snapshot,
+            open_coding_console
+        ])
         .run(tauri::generate_context!())
         .expect("BadgerBots Connect failed to start");
 }
@@ -228,5 +290,17 @@ mod tests {
         let detected = candidate("prism", "Prism Launcher", directory.clone());
         assert!(detected.detected);
         fs::remove_dir_all(directory).expect("temporary directory cleanup");
+    }
+
+    #[test]
+    fn coding_console_url_rejects_untrusted_protocols_and_hosts() {
+        assert!(safe_coding_console_url(
+            "https://studio.badgerbots.org/classroom"
+        ));
+        assert!(safe_coding_console_url("http://127.0.0.1:3000/classroom"));
+        assert!(!safe_coding_console_url("file:///C:/secrets"));
+        assert!(!safe_coding_console_url(
+            "http://attacker.example/classroom"
+        ));
     }
 }

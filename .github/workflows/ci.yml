@@ -154,6 +154,7 @@ jobs:
         env:
           VITE_BADGERBOTS_SUPABASE_URL: ${{ vars.BADGERBOTS_SUPABASE_URL }}
           VITE_BADGERBOTS_SUPABASE_PUBLISHABLE_KEY: ${{ vars.BADGERBOTS_SUPABASE_PUBLISHABLE_KEY }}
+          BADGERBOTS_GIT_COMMIT: ${{ github.sha }}
 
       - name: Record installer checksum
         shell: pwsh
@@ -207,6 +208,8 @@ jobs:
 
       - name: Build unsigned NSIS prototype
         run: pnpm --filter @badgerbots/student-connect tauri build --bundles nsis
+        env:
+          BADGERBOTS_WEB_URL: ${{ vars.BADGERBOTS_WEB_URL }}
 
       - name: Record installer checksum
         shell: pwsh

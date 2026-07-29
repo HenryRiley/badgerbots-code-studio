@@ -1045,7 +1045,7 @@ h1 {
 }
 .roster-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) repeat(3, minmax(100px, auto));
+  grid-template-columns: minmax(140px, 1fr) repeat(4, minmax(100px, auto));
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -1065,6 +1065,35 @@ h1 {
   padding: 16px;
   border-radius: 14px;
   background: #edf5f7;
+}
+.minecraft-mapping-control {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(180px, 0.8fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid #c1d8df;
+  border-radius: 12px;
+  background: #fff;
+}
+.minecraft-mapping-control p {
+  margin: 3px 0 0;
+  color: var(--bb-muted);
+  font-size: 0.82rem;
+}
+.device-link {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+}
+.device-link.ready {
+  color: #145e42;
+  background: #e9f8f0;
+}
+.device-link.warning {
+  color: #80520d;
+  background: #fff4d6;
 }
 .danger-button {
   min-height: 42px;

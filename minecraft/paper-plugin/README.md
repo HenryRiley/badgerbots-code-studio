@@ -13,6 +13,19 @@ Checkpoint 10 developer slice compiles the real Paper plugin, creates an origina
 City world from vanilla blocks, and accepts bounded HMAC-authenticated commands through a local
 Host-owned file spool. It does not open a browser-accessible port.
 
+Checkpoint 21 replaces the single-player prototype shortcut with exact signed routes. Each mapped
+camper receives a deterministic, persistent, unloadable working world. Run and Stop resolve the
+organization, location, session, camper, project, Minecraft username, and actual Paper world
+together. Owner-approved visitors cannot edit code; owner departure stops scoped handlers,
+returns connected visitors, and unloads only after the world is empty. The teacher world remains
+loaded.
+
+`/bbbenchmark separate-worlds` and `/bbbenchmark shared-instances` are operator-only bounded
+probes used by the Host buttons. They create 25 real Paper runtime scopes and temporary benchmark
+world allocations, collect 80 samples, write redacted machine/evidence JSON, safely unload, and
+delete only the run's `bb_bench_<opaque-run-id>_*` directories. This simulates camper connections;
+it is not evidence of 25 physical client machines or Wi-Fi quality.
+
 Run the dependency-free core proof with:
 
 ```sh

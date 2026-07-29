@@ -16,6 +16,7 @@ use tokio::sync::watch;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const BUSY_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const ROUTES_INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
@@ -94,6 +95,30 @@ impl ClassroomWorkerManager {
 struct PollResponse {
     command: Option<Box<RawValue>>,
     signature: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RoutesResponse {
+    routes: Box<RawValue>,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RoutingSnapshot {
+    schema_version: u8,
+    entries: Vec<RoutingEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RoutingEntry {
+    organization_id: String,
+    location_id: String,
+    session_id: String,
+    camper_id: String,
+    project_id: String,
+    minecraft_username: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,7 +294,35 @@ async fn run_worker(
         }
     };
     let mut state = load_state(&state_path);
+    let mut last_routes = None::<String>;
+    let mut next_routes = tokio::time::Instant::now();
     while !*cancellation.borrow() {
+        if tokio::time::Instant::now() >= next_routes {
+            match sync_routes(
+                &client,
+                &config,
+                &bridge_directory,
+                &bridge_secret,
+                last_routes.as_deref(),
+            )
+            .await
+            {
+                Ok(routes) => {
+                    if routes.is_some() {
+                        last_routes = routes;
+                    }
+                    next_routes = tokio::time::Instant::now() + ROUTES_INTERVAL;
+                }
+                Err(message) => {
+                    crate::handle_classroom_worker_event(
+                        &app,
+                        ClassroomWorkerEvent::Offline(message),
+                    );
+                    tokio::time::sleep(POLL_INTERVAL).await;
+                    continue;
+                }
+            }
+        }
         let delay = match poll_once(
             &client,
             &config,
@@ -300,6 +353,73 @@ async fn run_worker(
         tokio::time::sleep(delay).await;
     }
     crate::handle_classroom_worker_event(&app, ClassroomWorkerEvent::Stopped);
+}
+
+async fn sync_routes(
+    client: &Client,
+    config: &ClassroomWorkerConfig,
+    bridge_directory: &Path,
+    bridge_secret: &[u8],
+    previous: Option<&str>,
+) -> Result<Option<String>, String> {
+    let response = host_request(client, config, &json!({ "action": "host_routes" })).await?;
+    let signed = serde_json::from_slice::<RoutesResponse>(&response)
+        .map_err(|_| "The classroom routing response was invalid.".to_string())?;
+    if !verify_hmac_hex(
+        config.pairing_token.as_bytes(),
+        signed.routes.get().as_bytes(),
+        &signed.signature,
+    ) {
+        return Err("The classroom routing signature was rejected.".to_string());
+    }
+    if previous == Some(signed.routes.get()) {
+        return Ok(None);
+    }
+    let routes = serde_json::from_str::<RoutingSnapshot>(signed.routes.get())
+        .map_err(|_| "The authenticated classroom routes were malformed.".to_string())?;
+    validate_routes(&routes)?;
+    let digest = format!("{:x}", Sha256::digest(signed.routes.get().as_bytes()));
+    let command_id = format!("routes-{}", &digest[..32]);
+    let payload = serde_json::to_string(&json!({
+        "commandId": command_id,
+        "kind": "sync_routes",
+        "routes": routes,
+    }))
+    .map_err(|_| "The classroom routes could not be serialized.".to_string())?;
+    let result = deliver_to_paper(bridge_directory, bridge_secret, &command_id, payload).await?;
+    if result.status != "accepted" {
+        return Err(result
+            .code
+            .unwrap_or_else(|| "paper_routing_rejected".to_string()));
+    }
+    remove_bridge_response(bridge_directory, &command_id);
+    Ok(Some(signed.routes.get().to_string()))
+}
+
+fn validate_routes(routes: &RoutingSnapshot) -> Result<(), String> {
+    if routes.schema_version != 1 || routes.entries.len() > 25 {
+        return Err("The authenticated classroom route set exceeded its limit.".to_string());
+    }
+    let mut usernames = BTreeSet::new();
+    let mut campers = BTreeSet::new();
+    for route in &routes.entries {
+        if [
+            &route.organization_id,
+            &route.location_id,
+            &route.session_id,
+            &route.camper_id,
+        ]
+        .iter()
+        .any(|value| !safe_identifier(value))
+            || route.project_id != "sheep-city"
+            || !valid_minecraft_username(&route.minecraft_username)
+            || !usernames.insert(route.minecraft_username.to_ascii_lowercase())
+            || !campers.insert((&route.session_id, &route.camper_id))
+        {
+            return Err("The authenticated classroom route set was invalid.".to_string());
+        }
+    }
+    Ok(())
 }
 
 async fn poll_once(
@@ -392,6 +512,12 @@ fn rejected(command_id: &str, code: &str) -> HostAcknowledgement {
 fn compile_bridge_command(command: &CloudCommand) -> Result<String, String> {
     let camper_id = payload_identifier(&command.payload, "camperId")?;
     let project_id = payload_identifier(&command.payload, "projectId")?;
+    let minecraft_username = command
+        .payload
+        .get("minecraftUsername")
+        .and_then(Value::as_str)
+        .filter(|value| valid_minecraft_username(value))
+        .ok_or_else(|| "minecraft_mapping_required".to_string())?;
     if project_id != "sheep-city" {
         return Err("program_validation_failed".to_string());
     }
@@ -402,6 +528,7 @@ fn compile_bridge_command(command: &CloudCommand) -> Result<String, String> {
         "projectId": project_id,
         "studentId": camper_id,
         "worldId": format!("classroom-world-{camper_id}"),
+        "minecraftUsername": minecraft_username,
     });
     let payload = match command.kind {
         CommandKind::StopProgram => json!({
@@ -771,6 +898,13 @@ fn valid_node_id(value: &str) -> bool {
         })
 }
 
+fn valid_minecraft_username(value: &str) -> bool {
+    (3..=16).contains(&value.len())
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
 fn bounded(value: f64, minimum: f64, maximum: f64) -> bool {
     value.is_finite() && value >= minimum && value <= maximum
 }
@@ -1093,6 +1227,7 @@ mod tests {
             payload: json!({
                 "camperId": "66666666-6666-4666-8666-666666666666",
                 "projectId": "sheep-city",
+                "minecraftUsername": "Camper_17",
                 "programVersionId": "77777777-7777-4777-8777-777777777777",
                 "program": program,
             }),
@@ -1263,5 +1398,43 @@ mod tests {
             compile_bridge_command(&deployment_command(program)),
             Err("program_validation_failed".to_string())
         );
+    }
+
+    #[test]
+    fn routing_snapshot_requires_unique_exact_minecraft_players() {
+        let valid = RoutingSnapshot {
+            schema_version: 1,
+            entries: vec![RoutingEntry {
+                organization_id: "22222222-2222-4222-8222-222222222222".to_string(),
+                location_id: "33333333-3333-4333-8333-333333333333".to_string(),
+                session_id: "44444444-4444-4444-8444-444444444444".to_string(),
+                camper_id: "66666666-6666-4666-8666-666666666666".to_string(),
+                project_id: "sheep-city".to_string(),
+                minecraft_username: "Camper_17".to_string(),
+            }],
+        };
+        assert!(validate_routes(&valid).is_ok());
+        let duplicate = RoutingSnapshot {
+            schema_version: 1,
+            entries: vec![
+                RoutingEntry {
+                    organization_id: valid.entries[0].organization_id.clone(),
+                    location_id: valid.entries[0].location_id.clone(),
+                    session_id: valid.entries[0].session_id.clone(),
+                    camper_id: valid.entries[0].camper_id.clone(),
+                    project_id: "sheep-city".to_string(),
+                    minecraft_username: "Camper_17".to_string(),
+                },
+                RoutingEntry {
+                    organization_id: valid.entries[0].organization_id.clone(),
+                    location_id: valid.entries[0].location_id.clone(),
+                    session_id: valid.entries[0].session_id.clone(),
+                    camper_id: "88888888-8888-4888-8888-888888888888".to_string(),
+                    project_id: "sheep-city".to_string(),
+                    minecraft_username: "camper_17".to_string(),
+                },
+            ],
+        };
+        assert!(validate_routes(&duplicate).is_err());
     }
 }

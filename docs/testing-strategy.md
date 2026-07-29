@@ -78,6 +78,14 @@ denial, no console window, and the native platform/RAM probe.
 Checkpoint 15 adds graphical server configuration, immutable Paper object/checksum enforcement,
 embedded-plugin fail-closed behavior, atomic artifact writes, configuration recovery evidence, and
 pure firewall-policy tests. Windows CI builds the exact plugin before compiling the Host installer.
+
+Checkpoint 21 adds strict device UUID and Minecraft username validation, atomic one-active mapping
+SQL contracts, signed Host route snapshots, exact Run/Stop scope compilation, deterministic
+private-world names, and native Connect browser-launch tests. The Paper capacity command produces
+the existing 80-sample phase/count contract from real worlds and runtime deployments. Acceptance
+still requires running both buttons on the Windows 10/i5-i7/16 GiB teacher laptop, analyzing the
+files, and separately testing actual multi-client Wi-Fi, visitor, death/respawn, disconnect, and
+reconnect behavior.
 Physical Windows evidence must verify the download, UAC cancellation/success paths, Private-only
 TCP rule, restart persistence, and absence of a console window. CI does not exercise an elevated
 firewall mutation.

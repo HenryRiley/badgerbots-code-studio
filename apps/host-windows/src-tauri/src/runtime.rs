@@ -55,6 +55,9 @@ pub struct ServerLaunch {
     pub paper_path: PathBuf,
     pub bridge_directory: PathBuf,
     pub configuration: RuntimeConfiguration,
+    pub paper_sha256: String,
+    pub plugin_sha256: String,
+    pub git_commit: String,
 }
 
 #[derive(Clone)]
@@ -268,6 +271,11 @@ impl RuntimeStore {
             paper_path,
             bridge_directory: self.directory.join("bridge"),
             configuration,
+            paper_sha256: artifacts.paper_sha256,
+            plugin_sha256: artifacts.plugin_sha256,
+            git_commit: option_env!("BADGERBOTS_GIT_COMMIT")
+                .unwrap_or("development")
+                .to_string(),
         })
     }
 

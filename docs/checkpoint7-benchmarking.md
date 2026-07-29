@@ -17,20 +17,23 @@ chat, credentials, or program bodies.
 
 ## Workload
 
-Generate the deterministic workload plan:
+Start the installed Host and keep the same Paper process running for both strategies. In the
+built-in console panel, select **Test 25 private worlds**, wait for
+`BADGERBOTS_BENCHMARK_COMPLETE`, then select **Test shared instances** and wait again. The two
+files share one comparison-run ID only when run sequentially without restarting Paper.
+
+The underlying deterministic workload plan can still be inspected with:
 
 ```powershell
 npx --yes pnpm@11.16.0 --filter @badgerbots/load-simulator plan
 ```
 
-For each strategy, use a clean working-world root and the same immutable Sheep City template.
-Run baseline, sequential joins 1-25, a Run and all four Sheep City handlers per student, steady
-activity, two owner-approved visits, reverse-order disconnect/unload, and recovery. Collect at
-least one sample at every active count from 0 through 25 and every named phase.
-
-The eventual Paper/Host probe must populate the versioned `HardwareEvidence` contract from
-`tools/load-simulator/src/index.ts`. Until that probe exists, capture results manually but do
-not convert them into accepted evidence.
+The Paper probe runs baseline, sequential allocation 1-25, a bounded runtime deployment per
+student, steady activity, two visitor-allocation observations, reverse-order stop/unload, and
+recovery. It collects exactly 80 samples and populates the versioned `HardwareEvidence` contract.
+The generated workload uses real Paper worlds, chunks, runtime scopes, scheduler, disk, and
+Windows working-set measurements, but simulated camper connections. Separately record a
+multi-client Wi-Fi/visitor playtest; do not describe the probe as 25 physical clients.
 
 Analyze two completed evidence files:
 

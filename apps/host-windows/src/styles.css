@@ -571,6 +571,26 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.benchmark-actions {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.benchmark-actions p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .benchmark-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 .danger-button {
   width: 100%;
   margin-top: 0.85rem;

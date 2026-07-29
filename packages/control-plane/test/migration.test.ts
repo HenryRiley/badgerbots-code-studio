@@ -156,6 +156,29 @@ describe("portable control-plane migration", () => {
     );
   });
 
+  it("atomically maps enrolled devices to one active Minecraft player", async () => {
+    const core = await readFile(
+      resolve(root, "database/migrations/0008_device_player_routing.sql"),
+      "utf8",
+    );
+    const security = await readFile(
+      resolve(root, "database/providers/supabase/0009_device_player_routing_security.sql"),
+      "utf8",
+    );
+    expect(core).toContain("minecraft_mappings_one_active_device_idx");
+    expect(core).toContain("minecraft_mappings_one_active_username_idx");
+    expect(core).toContain("where active");
+    expect(core).toContain(
+      "create or replace function public.set_session_device_minecraft_mapping",
+    );
+    expect(core).toContain("join public.session_instructors assignment");
+    expect(core).toContain("for update of enrollment");
+    expect(core).toContain("lower(minecraft_username) = lower(requested_minecraft_username)");
+    expect(security).toContain("revoke all on function");
+    expect(security).toContain("to service_role");
+    expect(security).not.toContain("to authenticated");
+  });
+
   it("deploys cloud changes centrally without placing admin secrets in installers", async () => {
     const workflow = await readFile(resolve(root, ".github/workflows/deploy-supabase.yml"), "utf8");
     expect(workflow).toContain("workflow_dispatch:");
@@ -164,6 +187,8 @@ describe("portable control-plane migration", () => {
     expect(workflow).toContain("secrets.SUPABASE_DB_URL");
     expect(workflow).toContain("secrets.SUPABASE_PROJECT_REF");
     expect(workflow).toContain("0007_instructor_identity_recovery.sql");
+    expect(workflow).toContain("0008_device_player_routing.sql");
+    expect(workflow).toContain("0009_device_player_routing_security.sql");
     expect(workflow).toContain("functions deploy classroom-api");
     expect(workflow).not.toContain("VITE_BADGERBOTS_SUPABASE_SECRET");
     expect(workflow).not.toContain("SUPABASE_SERVICE_ROLE_KEY");

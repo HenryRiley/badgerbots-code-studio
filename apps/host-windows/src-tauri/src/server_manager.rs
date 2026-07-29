@@ -20,6 +20,7 @@ use tauri::{AppHandle, Manager};
 enum ServerControl {
     Stop,
     StopAndExit,
+    RunCapacityBenchmark(String),
 }
 
 pub(crate) enum SupervisorEvent {
@@ -83,6 +84,22 @@ impl ServerManager {
             } else {
                 ServerControl::Stop
             })
+            .map_err(|_| "The managed Minecraft server is already stopping.".to_string())
+    }
+
+    pub(crate) fn request_capacity_benchmark(&self, strategy: &str) -> Result<(), String> {
+        if !matches!(strategy, "separate-worlds" | "shared-instances") {
+            return Err("Choose a supported world benchmark strategy.".to_string());
+        }
+        let control = self
+            .control
+            .lock()
+            .map_err(|_| "Server controls are temporarily unavailable.".to_string())?;
+        let sender = control
+            .as_ref()
+            .ok_or_else(|| "Start the managed Minecraft server before benchmarking.".to_string())?;
+        sender
+            .send(ServerControl::RunCapacityBenchmark(strategy.to_string()))
             .map_err(|_| "The managed Minecraft server is already stopping.".to_string())
     }
 
@@ -176,6 +193,28 @@ fn supervise(
                 exit_after = true;
                 request_stop(&mut child);
                 stop_deadline = Some(Instant::now() + STOP_TIMEOUT);
+            }
+            Ok(ServerControl::RunCapacityBenchmark(strategy)) => {
+                if !ready || expected_stop {
+                    handle_supervisor_event(
+                        &app,
+                        SupervisorEvent::Log(
+                            "[Host] Capacity benchmark requires a fully running Paper server."
+                                .to_string(),
+                        ),
+                    );
+                } else if let Some(stdin) = child.stdin.as_mut() {
+                    let command = format!("bbbenchmark {strategy}\n");
+                    if stdin.write_all(command.as_bytes()).is_err() || stdin.flush().is_err() {
+                        handle_supervisor_event(
+                            &app,
+                            SupervisorEvent::Log(
+                                "[Host] Paper did not accept the capacity benchmark request."
+                                    .to_string(),
+                            ),
+                        );
+                    }
+                }
             }
             Err(mpsc::TryRecvError::Disconnected) => {
                 expected_stop = true;

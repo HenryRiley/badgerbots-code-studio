@@ -149,6 +149,32 @@ export function validateCamperName(
   return { firstName, lastInitial };
 }
 
+export function validateStableDevicePublicId(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value)
+  ) {
+    throw new ClassroomApiError(
+      400,
+      "invalid_device",
+      "Open Code Studio from BadgerBots Connect on this student device.",
+    );
+  }
+  return value.toLowerCase();
+}
+
+export function validateMinecraftUsername(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_]{3,16}$/.test(value)) {
+    throw new ClassroomApiError(
+      400,
+      "invalid_minecraft_username",
+      "Minecraft usernames must contain 3–16 letters, numbers, or underscores.",
+    );
+  }
+  return value;
+}
+
 export function validateDateRange(startsOn: string, endsOn: string): void {
   if (!isDate(startsOn) || !isDate(endsOn) || endsOn < startsOn) {
     throw new ClassroomApiError(

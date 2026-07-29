@@ -21,6 +21,14 @@ public final class BadgerBotsPlugin extends JavaPlugin {
     sheepCityWorld = new SheepCityWorld(this, gateway);
     sheepCityWorld.create();
     getServer().getPluginManager().registerEvents(sheepCityWorld, this);
+    if (getCommand("bbvisit") == null) {
+      throw new IllegalStateException("BadgerBots visitor command is missing from plugin.yml.");
+    }
+    getCommand("bbvisit").setExecutor(sheepCityWorld);
+    if (getCommand("bbbenchmark") == null) {
+      throw new IllegalStateException("BadgerBots benchmark command is missing from plugin.yml.");
+    }
+    getCommand("bbbenchmark").setExecutor(new PaperCapacityBenchmark(this, gateway));
     hostBridge = HostFileBridge.fromSystemProperties(this, gateway, sheepCityWorld);
     hostBridge.start();
     getLogger().info("BadgerBots Sheep City runtime loaded; waiting for an authenticated Host deployment.");

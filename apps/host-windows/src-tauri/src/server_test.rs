@@ -176,6 +176,12 @@ pub(crate) fn spawn_server(launch: &ServerLaunch) -> Result<SpawnedServer, Serve
             "-Dbadgerbots.teacherUsername={}",
             launch.configuration.teacher_username
         ))
+        .arg(format!("-Dbadgerbots.paperSha256={}", launch.paper_sha256))
+        .arg(format!(
+            "-Dbadgerbots.pluginSha256={}",
+            launch.plugin_sha256
+        ))
+        .arg(format!("-Dbadgerbots.gitCommit={}", launch.git_commit))
         .arg("-jar")
         .arg(&launch.paper_path)
         .arg("--nogui")

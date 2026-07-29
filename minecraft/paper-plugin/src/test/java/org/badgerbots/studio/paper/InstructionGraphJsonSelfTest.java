@@ -73,5 +73,16 @@ public final class InstructionGraphJsonSelfTest {
     if (SheepCityWorld.shouldBuildLayout(false, true)) {
       throw new AssertionError("An unexpected existing marker must fail toward preserving blocks.");
     }
+    String privateWorld =
+        SheepCityWorld.privateWorldName(
+            "44444444-4444-4444-8444-444444444444",
+            "66666666-6666-4666-8666-666666666666");
+    if (!privateWorld.matches("bb_sc_[a-f0-9]{32}")
+        || !privateWorld.equals(
+            SheepCityWorld.privateWorldName(
+                "44444444-4444-4444-8444-444444444444",
+                "66666666-6666-4666-8666-666666666666"))) {
+      throw new AssertionError("Private world names must be safe and deterministic.");
+    }
   }
 }

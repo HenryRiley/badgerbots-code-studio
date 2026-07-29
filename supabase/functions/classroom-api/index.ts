@@ -12,6 +12,8 @@ import {
   validateCamperName,
   validateClassroomProgram,
   validateDateRange,
+  validateMinecraftUsername,
+  validateStableDevicePublicId,
 } from "../_shared/classroom.ts";
 
 const supabaseUrl = requiredEnvironment("SUPABASE_URL");
@@ -108,6 +110,8 @@ async function route(
         await requireInstructor(request),
         requiredString(body, "sessionId", 64),
       );
+    case "set_device_mapping":
+      return setDeviceMapping(await requireInstructor(request), body);
     case "join":
       return joinClassroom(body, request);
     case "workspace":
@@ -124,6 +128,8 @@ async function route(
       return queueRuntime(request, body);
     case "host_poll":
       return hostPoll(request);
+    case "host_routes":
+      return hostRoutes(request);
     case "host_ack":
       return hostAcknowledge(request, body);
     default:
@@ -390,6 +396,36 @@ async function sessionSnapshot(
     .select("id,display_name,last_seen_at")
     .eq("location_id", session.location_id);
   if (hostError) throw databaseError();
+  const { data: enrollments, error: enrollmentError } = await admin
+    .from("enrollments")
+    .select("camper_id,device_id")
+    .eq("session_id", sessionId)
+    .is("revoked_at", null);
+  if (enrollmentError) throw databaseError();
+  const deviceIds = (enrollments ?? [])
+    .map((item) => item.device_id)
+    .filter((value): value is string => typeof value === "string");
+  const { data: devices, error: deviceError } = deviceIds.length
+    ? await admin
+      .from("devices")
+      .select("id,stable_device_public_id")
+      .in("id", deviceIds)
+    : { data: [], error: null };
+  if (deviceError) throw databaseError();
+  const { data: mappings, error: mappingError } = deviceIds.length
+    ? await admin
+      .from("minecraft_mappings")
+      .select("device_id,minecraft_username")
+      .in("device_id", deviceIds)
+      .eq("active", true)
+    : { data: [], error: null };
+  if (mappingError) throw databaseError();
+  const devicesById = new Map(
+    (devices ?? []).map((item) => [item.id, item.stable_device_public_id]),
+  );
+  const usernamesByDevice = new Map(
+    (mappings ?? []).map((item) => [item.device_id, item.minecraft_username]),
+  );
   return {
     session,
     campers: campers ?? [],
@@ -398,6 +434,61 @@ async function sessionSnapshot(
     commands: commands ?? [],
     health: health ?? [],
     hosts: hosts ?? [],
+    deviceMappings: (enrollments ?? []).map((item) => ({
+      camperId: item.camper_id,
+      deviceId: item.device_id,
+      devicePublicId: item.device_id
+        ? devicesById.get(item.device_id) ?? null
+        : null,
+      minecraftUsername: item.device_id
+        ? usernamesByDevice.get(item.device_id) ?? null
+        : null,
+    })),
+  };
+}
+
+async function setDeviceMapping(
+  instructor: InstructorContext,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const sessionId = requiredString(body, "sessionId", 64);
+  const camperId = requiredString(body, "camperId", 64);
+  const minecraftUsername = validateMinecraftUsername(
+    requiredString(body, "minecraftUsername", 16),
+  );
+  await requireSessionInstructor(instructor.instructorId, sessionId);
+  const { data: mappingRows, error: mappingError } = await admin.rpc(
+    "set_session_device_minecraft_mapping",
+    {
+      requested_session_id: sessionId,
+      requested_camper_id: camperId,
+      acting_instructor_id: instructor.instructorId,
+      requested_minecraft_username: minecraftUsername,
+    },
+  );
+  if (mappingError || !Array.isArray(mappingRows) || mappingRows.length !== 1) {
+    throw new ClassroomApiError(
+      409,
+      "device_required",
+      "Ask the camper to open Code Studio from BadgerBots Connect and join again.",
+    );
+  }
+  const mapping = mappingRows[0] as {
+    mapped_device_id: string;
+    mapping_organization_id: string;
+  };
+  await audit({
+    organizationId: mapping.mapping_organization_id,
+    sessionId,
+    actorKind: "instructor",
+    actorId: instructor.instructorId,
+    action: "device.minecraft_mapping.update",
+    targetKind: "device",
+    targetId: mapping.mapped_device_id,
+  });
+  return {
+    deviceId: mapping.mapped_device_id,
+    minecraftUsername,
   };
 }
 
@@ -410,6 +501,9 @@ async function joinClassroom(
     requiredString(body, "firstName", 40),
     requiredString(body, "lastInitial", 2),
   );
+  const devicePublicId = body.devicePublicId === undefined
+    ? undefined
+    : validateStableDevicePublicId(body.devicePublicId);
   const attemptDigest = await hmacHex(credentialPepper, abuseKey(request));
   const { data: attempt } = await admin
     .from("join_attempt_windows")
@@ -467,7 +561,24 @@ async function joinClassroom(
   const authSubject = created.user.id;
   const camperId = crypto.randomUUID();
   const workspaceId = crypto.randomUUID();
+  let deviceId: string | undefined;
   try {
+    if (devicePublicId) {
+      const { data: device, error: deviceError } = await admin
+        .from("devices")
+        .upsert(
+          {
+            organization_id: session.organization_id,
+            stable_device_public_id: devicePublicId,
+            last_seen_at: new Date().toISOString(),
+          },
+          { onConflict: "organization_id,stable_device_public_id" },
+        )
+        .select("id")
+        .single();
+      if (deviceError) throw databaseError();
+      deviceId = device.id;
+    }
     const { error: camperError } = await admin.from("campers").insert({
       id: camperId,
       session_id: session.id,
@@ -483,6 +594,7 @@ async function joinClassroom(
     const { error: enrollmentError } = await admin.from("enrollments").insert({
       session_id: session.id,
       camper_id: camperId,
+      ...(deviceId ? { device_id: deviceId } : {}),
     });
     if (enrollmentError) throw databaseError();
     const { error: workspaceError } = await admin.from("project_workspaces")
@@ -520,7 +632,9 @@ async function joinClassroom(
     });
     return {
       sessionId: session.id,
+      organizationId: session.organization_id,
       camperId,
+      deviceId,
       workspaceId,
       displayName: `${firstName} ${lastInitial}.`,
       accessToken: signIn.session.access_token,
@@ -721,6 +835,36 @@ async function queueRuntime(
   const latestVersion = commandKind === "deploy_program"
     ? await latestProgramVersion(workspaceId, Number(workspace.revision))
     : undefined;
+  const { data: enrollment, error: enrollmentError } = await admin
+    .from("enrollments")
+    .select("device_id")
+    .eq("session_id", workspace.session_id)
+    .eq("camper_id", workspace.camper_id)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (enrollmentError) throw databaseError();
+  if (!enrollment?.device_id) {
+    throw new ClassroomApiError(
+      409,
+      "device_required",
+      "Open this camper’s coding console from BadgerBots Connect before Run.",
+    );
+  }
+  const { data: mapping, error: mappingError } = await admin
+    .from("minecraft_mappings")
+    .select("minecraft_username")
+    .eq("organization_id", workspace.organization_id)
+    .eq("device_id", enrollment.device_id)
+    .eq("active", true)
+    .maybeSingle();
+  if (mappingError) throw databaseError();
+  if (!mapping) {
+    throw new ClassroomApiError(
+      409,
+      "minecraft_mapping_required",
+      "An instructor must assign this device’s exact Minecraft username before Run.",
+    );
+  }
   const commandId = crypto.randomUUID();
   const now = Date.now();
   const payload = commandKind === "deploy_program"
@@ -729,12 +873,14 @@ async function queueRuntime(
       program: validateClassroomProgram(workspace.canonical_program),
       camperId: workspace.camper_id,
       projectId: workspace.project_key,
+      minecraftUsername: mapping.minecraft_username,
       expectedActiveVersionId: workspace.active_runtime_version_id,
     }
     : {
       reason: actor.kind,
       camperId: workspace.camper_id,
       projectId: workspace.project_key,
+      minecraftUsername: mapping.minecraft_username,
     };
   const { error } = await admin.from("classroom_commands").insert({
     id: commandId,
@@ -779,6 +925,74 @@ async function hostPoll(request: Request): Promise<Record<string, unknown>> {
   return {
     command: delivery,
     signature: await hmacHex(host.token, JSON.stringify(delivery)),
+  };
+}
+
+async function hostRoutes(request: Request): Promise<Record<string, unknown>> {
+  const host = await requireHost(request);
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: sessions, error: sessionError } = await admin
+    .from("sessions")
+    .select("id")
+    .eq("organization_id", host.organizationId)
+    .eq("location_id", host.locationId)
+    .eq("retention_state", "active")
+    .lte("starts_on", today)
+    .gte("ends_on", today);
+  if (sessionError) throw databaseError();
+  const sessionIds = (sessions ?? []).map((session) => session.id);
+  if (sessionIds.length === 0) {
+    const routes = { schemaVersion: 1, entries: [] };
+    return {
+      routes,
+      signature: await hmacHex(host.token, JSON.stringify(routes)),
+    };
+  }
+  const { data: enrollments, error: enrollmentError } = await admin
+    .from("enrollments")
+    .select("session_id,camper_id,device_id")
+    .in("session_id", sessionIds)
+    .is("revoked_at", null)
+    .not("device_id", "is", null);
+  if (enrollmentError) throw databaseError();
+  const deviceIds = (enrollments ?? [])
+    .map((item) => item.device_id)
+    .filter((value): value is string => typeof value === "string");
+  const { data: mappings, error: mappingError } = deviceIds.length
+    ? await admin
+      .from("minecraft_mappings")
+      .select("device_id,minecraft_username")
+      .eq("organization_id", host.organizationId)
+      .in("device_id", deviceIds)
+      .eq("active", true)
+    : { data: [], error: null };
+  if (mappingError) throw databaseError();
+  const usernames = new Map(
+    (mappings ?? []).map((item) => [item.device_id, item.minecraft_username]),
+  );
+  const entries = (enrollments ?? [])
+    .flatMap((enrollment) => {
+      const minecraftUsername = usernames.get(enrollment.device_id);
+      return minecraftUsername
+        ? [{
+          organizationId: host.organizationId,
+          locationId: host.locationId,
+          sessionId: enrollment.session_id,
+          camperId: enrollment.camper_id,
+          projectId: "sheep-city",
+          minecraftUsername,
+        }]
+        : [];
+    })
+    .sort((left, right) =>
+      left.minecraftUsername.toLowerCase().localeCompare(
+        right.minecraftUsername.toLowerCase(),
+      )
+    );
+  const routes = { schemaVersion: 1, entries };
+  return {
+    routes,
+    signature: await hmacHex(host.token, JSON.stringify(routes)),
   };
 }
 
@@ -1048,7 +1262,12 @@ async function authenticatedUser(request: Request) {
 
 async function requireHost(
   request: Request,
-): Promise<{ hostId: string; token: string }> {
+): Promise<{
+  hostId: string;
+  token: string;
+  organizationId: string;
+  locationId: string;
+}> {
   const hostId = request.headers.get("x-badgerbots-host-id") ?? "";
   const token = request.headers.get("x-badgerbots-host-token") ?? "";
   if (!/^[0-9a-f-]{36}$/i.test(hostId) || token.length < 43) {
@@ -1061,7 +1280,7 @@ async function requireHost(
   const digest = await hmacHex(credentialPepper, token);
   const { data, error } = await admin
     .from("host_installations")
-    .select("id")
+    .select("id,organization_id,location_id")
     .eq("id", hostId)
     .eq("pairing_credential_digest", digest)
     .maybeSingle();
@@ -1076,7 +1295,12 @@ async function requireHost(
     .from("host_installations")
     .update({ last_seen_at: new Date().toISOString() })
     .eq("id", hostId);
-  return { hostId, token };
+  return {
+    hostId,
+    token,
+    organizationId: data.organization_id,
+    locationId: data.location_id,
+  };
 }
 
 async function latestProgramVersion(workspaceId: string, revision: number) {

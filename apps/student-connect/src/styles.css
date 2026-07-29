@@ -134,6 +134,40 @@ h2 {
   font-size: 1.45rem;
   letter-spacing: 0.08em;
 }
+.readiness-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+.readiness-actions > strong {
+  color: #ffc75f;
+  font-size: 1.45rem;
+  letter-spacing: 0.08em;
+}
+.readiness.ready .readiness-actions > strong {
+  color: #62e6ba;
+}
+.readiness-actions small {
+  color: #b9d3dd;
+}
+.coding-console-button {
+  min-height: 46px;
+  border: 1px solid #69e5bd;
+  border-radius: 12px;
+  padding: 10px 16px;
+  color: #052e2c;
+  background: linear-gradient(135deg, #62e6ba, #70d6ff);
+  font-weight: 900;
+  cursor: pointer;
+}
+.action-message {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(98, 230, 186, 0.35);
+  border-radius: 12px;
+  color: #c9f8e7;
+  background: rgba(6, 78, 59, 0.55);
+}
 
 .readiness.ready > strong {
   color: #62e6ba;

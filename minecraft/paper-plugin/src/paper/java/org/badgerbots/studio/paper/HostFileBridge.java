@@ -11,8 +11,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Objects;
 import java.util.logging.Level;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -38,7 +41,6 @@ final class HostFileBridge {
   private final Path outbox;
   private final byte[] secret;
   private BukkitTask task;
-  private String activeProgramVersionId;
 
   private HostFileBridge(
       JavaPlugin plugin,
@@ -101,7 +103,6 @@ final class HostFileBridge {
   void stop() {
     if (task != null) task.cancel();
     task = null;
-    activeProgramVersionId = null;
   }
 
   private void poll() {
@@ -157,6 +158,7 @@ final class HostFileBridge {
           switch (requiredString(command, "kind")) {
             case "deploy_program" -> deploy(command);
             case "stop_program" -> stopProgram(command);
+            case "sync_routes" -> syncRoutes(command);
             default ->
                 response(
                     commandId,
@@ -188,25 +190,50 @@ final class HostFileBridge {
   private JsonObject deploy(JsonObject command) {
     String commandId = requiredString(command, "commandId");
     String nextVersion = requiredString(command, "programVersionId");
-    if (command.has("expectedActiveVersionId")
-        && !command.get("expectedActiveVersionId").getAsString().equals(activeProgramVersionId)) {
-      return response(
-          commandId,
-          "rejected",
-          "active_version_conflict",
-          "Paper is running a different program version.");
-    }
-    Player player = sheepCity.activePlayer();
     JsonObject scope = command.getAsJsonObject("scope");
+    String organizationId = requiredString(scope, "organizationId");
+    String locationId = requiredString(scope, "locationId");
+    String sessionId = requiredString(scope, "sessionId");
+    String projectId = requiredString(scope, "projectId");
+    String studentId = requiredString(scope, "studentId");
+    String minecraftUsername = requiredString(scope, "minecraftUsername");
+    String activeProgramVersionId =
+        gateway.activeProgramVersion(sessionId, projectId, studentId);
+    String expectedActiveVersionId =
+        command.has("expectedActiveVersionId")
+            ? command.get("expectedActiveVersionId").getAsString()
+            : null;
+    if (activeProgramVersionId != null
+        && !Objects.equals(expectedActiveVersionId, activeProgramVersionId)) {
+      JsonObject conflict =
+          response(
+              commandId,
+              "rejected",
+              "active_version_conflict",
+              "Paper is running a different program version.");
+      if (activeProgramVersionId != null) {
+        conflict.addProperty("activeProgramVersionId", activeProgramVersionId);
+      }
+      return conflict;
+    }
+    SheepCityWorld.RoutedPlayer routed =
+        sheepCity.playerForScope(
+            organizationId,
+            locationId,
+            sessionId,
+            projectId,
+            studentId,
+            minecraftUsername);
+    Player player = routed.player();
     ScopeKey key =
         new ScopeKey(
-            requiredString(scope, "organizationId"),
-            requiredString(scope, "locationId"),
-            requiredString(scope, "sessionId"),
-            requiredString(scope, "projectId"),
-            requiredString(scope, "studentId"),
+            organizationId,
+            locationId,
+            sessionId,
+            projectId,
+            studentId,
             nextVersion,
-            player.getWorld().getUID().toString());
+            routed.world().getUID().toString());
     AtomicProgramRuntime.DeploymentResult result =
         gateway.deploy(
             player.getUniqueId(),
@@ -219,18 +246,64 @@ final class HostFileBridge {
           "deployment_validation_failed",
           result.message());
     }
-    activeProgramVersionId = result.activeProgramVersionId();
-    Sheep sheep = sheepCity.createDemoSheep();
+    Sheep sheep = sheepCity.createDemoSheep(routed);
     gateway.registerSheep(sheep.getUniqueId(), key, sheep.getLocation());
-    return response(commandId, "accepted", null, "Program activated in Sheep City.");
+    JsonObject accepted =
+        response(commandId, "accepted", null, "Program activated in the camper’s private world.");
+    accepted.addProperty("activeProgramVersionId", result.activeProgramVersionId());
+    return accepted;
   }
 
   private JsonObject stopProgram(JsonObject command) {
-    Player player = sheepCity.activePlayer();
-    gateway.stopPlayer(player.getUniqueId());
-    activeProgramVersionId = null;
+    JsonObject scope = command.getAsJsonObject("scope");
+    String organizationId = requiredString(scope, "organizationId");
+    String locationId = requiredString(scope, "locationId");
+    String sessionId = requiredString(scope, "sessionId");
+    String projectId = requiredString(scope, "projectId");
+    String studentId = requiredString(scope, "studentId");
+    String minecraftUsername = requiredString(scope, "minecraftUsername");
+    sheepCity.stopScope(
+        organizationId,
+        locationId,
+        sessionId,
+        projectId,
+        studentId,
+        minecraftUsername);
     return response(
-        requiredString(command, "commandId"), "accepted", null, "Program stopped in Sheep City.");
+        requiredString(command, "commandId"),
+        "accepted",
+        null,
+        "The exact camper program stopped.");
+  }
+
+  private JsonObject syncRoutes(JsonObject command) {
+    JsonObject routes = command.getAsJsonObject("routes");
+    if (routes == null
+        || routes.get("schemaVersion") == null
+        || routes.get("schemaVersion").getAsInt() != 1) {
+      throw new IllegalArgumentException("Host routes use an unsupported schema.");
+    }
+    List<SheepCityWorld.PlayerRoute> decoded = new ArrayList<>();
+    routes
+        .getAsJsonArray("entries")
+        .forEach(
+            entry -> {
+              JsonObject route = entry.getAsJsonObject();
+              decoded.add(
+                  new SheepCityWorld.PlayerRoute(
+                      requiredString(route, "organizationId"),
+                      requiredString(route, "locationId"),
+                      requiredString(route, "sessionId"),
+                      requiredString(route, "camperId"),
+                      requiredString(route, "projectId"),
+                      requiredString(route, "minecraftUsername")));
+            });
+    sheepCity.syncRoutes(decoded);
+    return response(
+        requiredString(command, "commandId"),
+        "accepted",
+        null,
+        "Camper-to-Minecraft routes synchronized.");
   }
 
   private JsonObject response(
@@ -239,9 +312,6 @@ final class HostFileBridge {
     result.addProperty("commandId", commandId);
     result.addProperty("status", status);
     if (code != null) result.addProperty("code", code);
-    if (activeProgramVersionId != null) {
-      result.addProperty("activeProgramVersionId", activeProgramVersionId);
-    }
     result.addProperty("message", message);
     return result;
   }

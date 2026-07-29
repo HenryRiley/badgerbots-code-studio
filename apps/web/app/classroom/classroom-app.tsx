@@ -64,6 +64,12 @@ interface ClassroomSnapshot {
   }[];
   health: { subject_kind: string; subject_id: string; state: string; observed_at: string }[];
   hosts: { id: string; display_name: string; last_seen_at?: string }[];
+  deviceMappings: {
+    camperId: string;
+    deviceId: string | null;
+    devicePublicId: string | null;
+    minecraftUsername: string | null;
+  }[];
 }
 
 interface StudentState {
@@ -313,6 +319,11 @@ function Landing(props: {
   const [joinCode, setJoinCode] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastInitial, setLastInitial] = useState("");
+  const [devicePublicId] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (new URLSearchParams(window.location.search).get("bbDevice") ?? ""),
+  );
 
   const instructorLogin = () =>
     props.perform(async () => {
@@ -334,7 +345,16 @@ function Landing(props: {
         refreshToken: string;
         revision: number;
         program: Program;
-      }>("join", { joinCode, firstName, lastInitial }, "");
+      }>(
+        "join",
+        {
+          joinCode,
+          firstName,
+          lastInitial,
+          ...(devicePublicId ? { devicePublicId } : {}),
+        },
+        "",
+      );
       const { error } = await classroomClient().auth.setSession({
         access_token: result.accessToken,
         refresh_token: result.refreshToken,
@@ -400,6 +420,11 @@ function Landing(props: {
       >
         <p className="eyebrow">Student</p>
         <h2>Join this week’s camp</h2>
+        <p className={devicePublicId ? "device-link ready" : "device-link warning"}>
+          {devicePublicId
+            ? "This coding console is linked to BadgerBots Connect on this laptop."
+            : "Open this page from BadgerBots Connect to link Minecraft to the correct camper."}
+        </p>
         <label>
           Class code
           <input
@@ -459,9 +484,13 @@ function InstructorDashboard(props: {
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [assistantEmail, setAssistantEmail] = useState("");
   const [assistantPassword, setAssistantPassword] = useState("");
+  const [minecraftUsername, setMinecraftUsername] = useState("");
 
   const selectedWorkspace = props.snapshot?.workspaces.find(
     (item) => item.id === selectedWorkspaceId,
+  );
+  const selectedDeviceMapping = props.snapshot?.deviceMappings.find(
+    (item) => item.camperId === selectedWorkspace?.camper_id,
   );
 
   const createSession = () =>
@@ -565,6 +594,24 @@ function InstructorDashboard(props: {
       );
       await props.refreshSnapshot();
       return `${commandKind === "deploy_program" ? "Run" : "Stop"} command ${result.commandId} is ${result.status}.`;
+    });
+
+  const updateMinecraftMapping = () =>
+    props.perform(async () => {
+      if (!selectedWorkspace) throw new Error("Choose a student first.");
+      if (!selectedDeviceMapping?.deviceId) {
+        throw new Error(
+          "Ask this camper to open Code Studio from BadgerBots Connect and join again.",
+        );
+      }
+      await callClassroomApi("set_device_mapping", {
+        sessionId: props.selectedSessionId,
+        camperId: selectedWorkspace.camper_id,
+        minecraftUsername,
+      });
+      setMinecraftUsername("");
+      await props.refreshSnapshot();
+      return "The device is now mapped to the exact Minecraft username.";
     });
 
   return (
@@ -697,6 +744,9 @@ function InstructorDashboard(props: {
             );
             const online =
               presence !== undefined && Date.now() - Date.parse(presence.observed_at) < 50_000;
+            const deviceMapping = props.snapshot?.deviceMappings.find(
+              (item) => item.camperId === camper.id,
+            );
             return (
               <button
                 type="button"
@@ -711,6 +761,13 @@ function InstructorDashboard(props: {
                 </strong>
                 <span>Revision {workspace?.revision ?? 0}</span>
                 <span>{online ? "Web online" : "Web offline"}</span>
+                <span>
+                  {deviceMapping?.minecraftUsername
+                    ? `Minecraft: ${deviceMapping.minecraftUsername}`
+                    : deviceMapping?.deviceId
+                      ? "Minecraft mapping needed"
+                      : "Connect device needed"}
+                </span>
                 <span>{help ? `Help: ${help.state}` : "No help request"}</span>
               </button>
             );
@@ -721,6 +778,32 @@ function InstructorDashboard(props: {
             <p>
               Selected revision <strong>{selectedWorkspace.revision}</strong>
             </p>
+            <div className="minecraft-mapping-control">
+              <div>
+                <strong>Fixed Minecraft player</strong>
+                <p>
+                  {selectedDeviceMapping?.minecraftUsername ??
+                    (selectedDeviceMapping?.deviceId
+                      ? "Assign the username used by this laptop."
+                      : "The camper must join from BadgerBots Connect first.")}
+                </p>
+              </div>
+              <input
+                aria-label="Exact Minecraft username"
+                placeholder="Exact Minecraft username"
+                value={minecraftUsername}
+                onChange={(event) => setMinecraftUsername(event.target.value)}
+              />
+              <button
+                className="secondary-button"
+                disabled={
+                  props.busy || !selectedDeviceMapping?.deviceId || minecraftUsername.length < 3
+                }
+                onClick={() => void updateMinecraftMapping()}
+              >
+                Save mapping
+              </button>
+            </div>
             <div className="button-row">
               <Link className="secondary-button" href="/" onClick={openWorkspace}>
                 Edit selected blocks

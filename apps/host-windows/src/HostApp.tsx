@@ -607,6 +607,41 @@ export function HostApp() {
             ? snapshot.serverLogs.join("\n")
             : "The graphical server test has not run yet."}
         </pre>
+        <div className="benchmark-actions">
+          <div>
+            <strong>25-student capacity evidence</strong>
+            <p>
+              Run both strategies on the Windows 10 teacher laptop. These use real Paper worlds and
+              25 simulated camper runtime scopes; they do not impersonate 25 physical clients.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busy || snapshot.server.lifecycle !== "running"}
+            onClick={() =>
+              void perform(async () => {
+                setSnapshot(await gateway.runCapacityBenchmark("separate-worlds"));
+                return "Separate-world benchmark started. Watch the live console for completion.";
+              })
+            }
+          >
+            Test 25 private worlds
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busy || snapshot.server.lifecycle !== "running"}
+            onClick={() =>
+              void perform(async () => {
+                setSnapshot(await gateway.runCapacityBenchmark("shared-instances"));
+                return "Shared-instance benchmark started. Watch the live console for completion.";
+              })
+            }
+          >
+            Test shared instances
+          </button>
+        </div>
       </section>
     </main>
   );

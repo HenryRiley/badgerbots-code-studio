@@ -36,6 +36,13 @@ the server card. This installed path needs no repository checkout, environment v
 pnpm, PowerShell, or exposed laptop web port. A cloud outage leaves Paper and its last-known-good
 program running while Host retries outbound.
 
+The worker now synchronizes an authenticated, signed set of at most 25 current
+camper/device/Minecraft routes. Run and Stop carry the exact camper and Minecraft username to
+Paper; Paper rejects missing, stale, ambiguous, or offline routes. The Host console also exposes
+two fixed capacity controls—**Test 25 private worlds** and **Test shared instances**—without
+accepting arbitrary console input. Each writes an 80-sample JSON evidence file below the plugin's
+private `benchmarks` directory and reports its path in the built-in console.
+
 Host now creates a verified operational world snapshot before each normal server start. While
 Paper is stopped, the Recovery panel can also create a backup, select and restore any retained
 snapshot, or reset only Sheep City after first creating a recovery snapshot. Every recovery point
