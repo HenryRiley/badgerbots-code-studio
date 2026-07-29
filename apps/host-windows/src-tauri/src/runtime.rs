@@ -121,7 +121,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.8.2 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.9.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))

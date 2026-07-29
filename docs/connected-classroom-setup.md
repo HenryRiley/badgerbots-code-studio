@@ -8,10 +8,11 @@ and signs in. The Host installer contains only browser-safe Project URL/Publisha
 database and Edge Function changes are deployed centrally and must never be bundled with a
 Secret/service-role credential.
 
-Checkpoint 14 replaces the instructor-facing Host pairing environment variables with the native
-Windows wizard. The CLI steps below remain only for developers testing the unbundled Paper runtime.
-After updating to Checkpoint 14, redeploy `classroom-api` once so the restricted native onboarding
-client can call the authenticated profile and pairing actions.
+Host 0.9 replaces the instructor-facing pairing variables and separate developer worker with the
+native Windows wizard and an automatic installed outbound worker. The CLI steps below remain only
+for developers testing the unbundled Paper runtime. Redeploy `classroom-api` once so the restricted
+native onboarding client can call the authenticated profile, pairing, polling, and acknowledgement
+actions.
 
 ## 1. Apply the two new SQL files
 
@@ -161,7 +162,14 @@ Open `http://127.0.0.1:3000/classroom`, sign in, create a session covering today
 
 ## 5. Start the outbound Windows Host and Paper
 
-Stop the previous command with `Ctrl+C`, then set the displayed Host values in the same protected PowerShell window:
+For the installed path, open BadgerBots Host and select **Start classroom server**. Host uses the
+pairing credential already protected during the wizard and starts cloud synchronization
+automatically. Confirm the server card changes from **Classroom cloud · Connecting** to **Online**.
+No repository, command prompt, Node.js, pnpm, Host ID, or Host token is required on the teacher
+laptop.
+
+The following remains a developer-only fallback for the unbundled Paper runtime. Stop the previous
+command with `Ctrl+C`, then set the displayed Host values in the same protected PowerShell window:
 
 ```powershell
 $env:BADGERBOTS_CLASSROOM_HOST_ID = "PASTE_HOST_ID"

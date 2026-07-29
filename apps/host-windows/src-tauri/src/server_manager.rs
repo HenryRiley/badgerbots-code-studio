@@ -1,10 +1,12 @@
 use crate::{
+    classroom_worker::{ClassroomWorkerEvent, ClassroomWorkerManager},
     handle_supervisor_event,
+    onboarding::OnboardingStore,
     power::set_active_camp_power,
     runtime::ServerLaunch,
     server_test::{
-        ReadinessSignals, START_TIMEOUT, STOP_TIMEOUT, loopback_connects, redact_line,
-        spawn_server, stop_or_kill,
+        ReadinessSignals, START_TIMEOUT, STOP_TIMEOUT, SpawnedServer, loopback_connects,
+        redact_line, spawn_server, stop_or_kill,
     },
 };
 use std::{
@@ -56,10 +58,14 @@ impl ServerManager {
         if control.is_some() {
             return Err("The managed Minecraft server is already active.".to_string());
         }
-        let (child, output) = spawn_server(&launch).map_err(|failure| failure.message)?;
+        let SpawnedServer {
+            child,
+            output,
+            bridge_secret,
+        } = spawn_server(&launch).map_err(|failure| failure.message)?;
         let (sender, receiver) = mpsc::channel();
         *control = Some(sender);
-        thread::spawn(move || supervise(app, launch, child, output, receiver));
+        thread::spawn(move || supervise(app, launch, child, output, bridge_secret, receiver));
         Ok(())
     }
 
@@ -92,6 +98,7 @@ fn supervise(
     launch: ServerLaunch,
     mut child: std::process::Child,
     output: mpsc::Receiver<String>,
+    bridge_secret: Vec<u8>,
     control: mpsc::Receiver<ServerControl>,
 ) {
     let started = Instant::now();
@@ -118,6 +125,27 @@ fn supervise(
             ready = true;
             let power_active = set_active_camp_power(true);
             handle_supervisor_event(&app, SupervisorEvent::Ready);
+            match app.state::<OnboardingStore>().classroom_worker_config() {
+                Ok(config) => {
+                    if let Err(message) = app.state::<ClassroomWorkerManager>().start(
+                        app.clone(),
+                        config,
+                        launch.bridge_directory.clone(),
+                        bridge_secret.clone(),
+                    ) {
+                        crate::handle_classroom_worker_event(
+                            &app,
+                            ClassroomWorkerEvent::Offline(message),
+                        );
+                    }
+                }
+                Err(message) => {
+                    crate::handle_classroom_worker_event(
+                        &app,
+                        ClassroomWorkerEvent::Offline(message),
+                    );
+                }
+            }
             if !power_active {
                 handle_supervisor_event(
                     &app,
@@ -186,6 +214,7 @@ fn supervise(
                     }
                 });
                 set_active_camp_power(false);
+                app.state::<ClassroomWorkerManager>().stop();
                 app.state::<ServerManager>().clear();
                 handle_supervisor_event(
                     &app,
@@ -204,6 +233,7 @@ fn supervise(
             Err(_) => {
                 stop_or_kill(&mut child);
                 set_active_camp_power(false);
+                app.state::<ClassroomWorkerManager>().stop();
                 app.state::<ServerManager>().clear();
                 handle_supervisor_event(
                     &app,

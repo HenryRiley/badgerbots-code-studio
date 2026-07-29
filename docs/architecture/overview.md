@@ -49,6 +49,12 @@ The AST owns semantics. Text is parsed into the supported grammar. Blockly is re
 - World templates are immutable; reset creates/restores a working copy.
 - Every scheduled task, event subscription, entity, and mutable resource is registered to a student execution scope for cleanup.
 
+One Paper process has one global plugin/mod stack. Different camper behaviors are safe instruction
+graphs interpreted by the shared BadgerBots plugin, not separately loaded JARs. Multiple Bukkit
+worlds can run different scoped graphs simultaneously; incompatible Minecraft versions, mod
+loaders, or plugin sets require separate server processes. See
+[ADR 0023](../decisions/0023-single-paper-multi-world-runtime.md).
+
 ## Preferred technology, subject to spikes
 
 - Next.js/TypeScript web application.

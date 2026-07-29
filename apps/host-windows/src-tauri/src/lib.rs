@@ -6,6 +6,7 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 
+mod classroom_worker;
 mod firewall;
 mod managed_java;
 mod onboarding;
@@ -15,6 +16,7 @@ mod server_manager;
 mod server_test;
 mod world_backup;
 
+use classroom_worker::{ClassroomWorkerEvent, ClassroomWorkerManager};
 use firewall::approve_private_minecraft_port;
 use onboarding::{OnboardingStore, OnboardingView, SignInResult};
 use runtime::RuntimeStore;
@@ -98,6 +100,29 @@ struct UpdateState {
     channel: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudConnectionState {
+    status: String,
+    detail: String,
+    #[serde(default)]
+    last_successful_poll: Option<String>,
+    #[serde(default)]
+    last_command_id: Option<String>,
+    #[serde(default)]
+    last_command_status: Option<String>,
+}
+
+fn default_cloud_connection() -> CloudConnectionState {
+    CloudConnectionState {
+        status: "stopped".to_string(),
+        detail: "Starts automatically with the classroom server.".to_string(),
+        last_successful_poll: None,
+        last_command_id: None,
+        last_command_status: None,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HostSnapshot {
@@ -111,6 +136,8 @@ struct HostSnapshot {
     server: ServerState,
     backup: BackupState,
     update: UpdateState,
+    #[serde(default = "default_cloud_connection")]
+    cloud_connection: CloudConnectionState,
     pending_outbound_messages: u32,
     diagnostics: Vec<DiagnosticEvent>,
     #[serde(default)]
@@ -148,6 +175,9 @@ impl HostStore {
                 "warning",
             );
         }
+        snapshot.cloud_connection.status = "stopped".to_string();
+        snapshot.cloud_connection.detail =
+            "Starts automatically with the classroom server.".to_string();
         if let Some(backups) = discovered_backups {
             snapshot.backup.snapshots = backups;
             refresh_backup_summary(&mut snapshot.backup);
@@ -178,6 +208,85 @@ pub(crate) fn handle_supervisor_event(app: &tauri::AppHandle, event: SupervisorE
         if persist {
             let _ = store.persist(&snapshot);
         }
+    }
+    let _ = app.emit("host-server-update", ());
+}
+
+pub(crate) fn handle_classroom_worker_event(app: &tauri::AppHandle, event: ClassroomWorkerEvent) {
+    let store = app.state::<HostStore>();
+    if let Ok(mut snapshot) = store.snapshot.lock() {
+        let previous_connection = snapshot.cloud_connection.clone();
+        let previous_status = snapshot.cloud_connection.status.clone();
+        let command_processed = matches!(&event, ClassroomWorkerEvent::Command { .. });
+        match event {
+            ClassroomWorkerEvent::Started => {
+                snapshot.cloud_connection.status = "connecting".to_string();
+                snapshot.cloud_connection.detail =
+                    "Connecting outbound to the protected classroom service…".to_string();
+            }
+            ClassroomWorkerEvent::Online => {
+                snapshot.cloud_connection.status = "online".to_string();
+                snapshot.cloud_connection.detail =
+                    "Authenticated outbound classroom connection is healthy.".to_string();
+                snapshot.cloud_connection.last_successful_poll =
+                    Some("recorded-locally".to_string());
+            }
+            ClassroomWorkerEvent::Offline(message) => {
+                snapshot.cloud_connection.status = "offline".to_string();
+                snapshot.cloud_connection.detail = sanitize(&message);
+            }
+            ClassroomWorkerEvent::Command {
+                command_id,
+                status,
+                code,
+            } => {
+                snapshot.cloud_connection.status = "online".to_string();
+                snapshot.cloud_connection.last_successful_poll =
+                    Some("recorded-locally".to_string());
+                snapshot.cloud_connection.last_command_id = Some(sanitize(&command_id));
+                snapshot.cloud_connection.last_command_status = Some(status.clone());
+                snapshot.cloud_connection.detail = code.as_ref().map_or_else(
+                    || format!("Classroom command {status} by Paper."),
+                    |code| format!("Classroom command {status}: {}", sanitize(code)),
+                );
+                push_diagnostic(
+                    &mut snapshot,
+                    if status == "accepted" {
+                        "CLASSROOM_COMMAND_ACCEPTED"
+                    } else {
+                        "CLASSROOM_COMMAND_REJECTED"
+                    },
+                    "An authenticated classroom runtime command was processed.",
+                    if status == "accepted" {
+                        "info"
+                    } else {
+                        "warning"
+                    },
+                );
+            }
+            ClassroomWorkerEvent::Stopped => {
+                snapshot.cloud_connection.status = "stopped".to_string();
+                snapshot.cloud_connection.detail =
+                    "Classroom synchronization stopped with Paper.".to_string();
+            }
+        }
+        if snapshot.cloud_connection == previous_connection && !command_processed {
+            return;
+        }
+        if snapshot.cloud_connection.status != previous_status {
+            let next_status = snapshot.cloud_connection.status.clone();
+            push_diagnostic(
+                &mut snapshot,
+                "CLASSROOM_CONNECTION_CHANGED",
+                &format!("Classroom cloud connection is {next_status}."),
+                if next_status == "offline" {
+                    "warning"
+                } else {
+                    "info"
+                },
+            );
+        }
+        let _ = store.persist(&snapshot);
     }
     let _ = app.emit("host-server-update", ());
 }
@@ -1346,6 +1455,7 @@ fn initial_snapshot() -> HostSnapshot {
             status: "not_checked".to_string(),
             channel: "internal".to_string(),
         },
+        cloud_connection: default_cloud_connection(),
         pending_outbound_messages: 0,
         diagnostics: vec![DiagnosticEvent {
             id: "event-native-ready".to_string(),
@@ -1410,6 +1520,7 @@ pub fn run() {
             app.manage(OnboardingStore::load(&data_directory).map_err(std::io::Error::other)?);
             app.manage(runtime);
             app.manage(ServerManager::new());
+            app.manage(ClassroomWorkerManager::new());
             Ok(())
         })
         .on_window_event(|window, event| {

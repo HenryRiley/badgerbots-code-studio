@@ -237,6 +237,19 @@ export function HostApp() {
               </p>
             </div>
           </div>
+          <div className={`cloud-connection ${snapshot.cloudConnection.status}`}>
+            <span className="cloud-status-dot" aria-hidden="true" />
+            <div>
+              <strong>Classroom cloud · {titleCase(snapshot.cloudConnection.status)}</strong>
+              <p>{snapshot.cloudConnection.detail}</p>
+              {snapshot.cloudConnection.lastCommandId ? (
+                <small>
+                  Last command {snapshot.cloudConnection.lastCommandId.slice(0, 8)}… ·{" "}
+                  {titleCase(snapshot.cloudConnection.lastCommandStatus ?? "processed")}
+                </small>
+              ) : null}
+            </div>
+          </div>
           {snapshot.server.lifecycle === "stopped" ? (
             <button
               type="button"

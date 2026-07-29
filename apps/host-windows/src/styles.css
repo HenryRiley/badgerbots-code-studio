@@ -424,6 +424,44 @@ h2 {
 .server-icon.failed {
   color: #ff9ca5;
 }
+.cloud-connection {
+  display: flex;
+  gap: 10px;
+  margin: -5px 0 16px;
+  padding: 11px 12px;
+  border: 1px solid #ffffff24;
+  border-radius: 11px;
+  background: #071d2b38;
+}
+.cloud-connection p {
+  margin: 3px 0 0;
+  color: #c3d7df;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.cloud-connection small {
+  display: block;
+  margin-top: 5px;
+  color: #9fb9c5;
+}
+.cloud-status-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #9bb0ba;
+}
+.cloud-connection.connecting .cloud-status-dot {
+  background: #f0c45a;
+}
+.cloud-connection.online .cloud-status-dot {
+  background: #6ed5a8;
+  box-shadow: 0 0 0 4px #6ed5a826;
+}
+.cloud-connection.offline .cloud-status-dot {
+  background: #ff9ca5;
+}
 .locked-button {
   width: 100%;
   color: #adc2ce;
