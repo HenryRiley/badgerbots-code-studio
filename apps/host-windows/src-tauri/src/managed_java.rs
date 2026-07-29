@@ -375,16 +375,16 @@ fn discover_existing_java_candidates() -> Vec<PathBuf> {
     where_command.arg("java.exe");
     use std::os::windows::process::CommandExt;
     where_command.creation_flags(0x0800_0000);
-    if let Ok(output) = where_command.output() {
-        if output.status.success() {
-            candidates.extend(
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .map(PathBuf::from),
-            );
-        }
+    if let Ok(output) = where_command.output()
+        && output.status.success()
+    {
+        candidates.extend(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(PathBuf::from),
+        );
     }
 
     let mut vendor_roots = Vec::new();
