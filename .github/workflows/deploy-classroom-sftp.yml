@@ -69,6 +69,9 @@ jobs:
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared Web workspace packages
+        run: pnpm turbo run build --filter=@badgerbots/web^...
+
       - name: Build the /classroom static export
         run: pnpm --filter @badgerbots/web build
         env:
