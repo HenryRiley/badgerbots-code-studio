@@ -115,11 +115,12 @@ an intact snapshot and a visibly modified snapshot, restarting Paper after each 
 startup does not overwrite either state.
 
 Host 0.8.0 adds private Java runtime tests for safe single-root ZIP extraction, traversal refusal,
-and installed-file checksum damage detection. Windows CI must compile the Windows-only downloader,
-bounded extraction, atomic activation, hidden process flags, and exact private `java.exe` launch.
-Physical Windows evidence must additionally cover first download, visible progress, automatic
-repair after deleting/changing a runtime file, unchanged system Java/PATH state, and Paper startup
-from the private executable.
+and installed-file checksum damage detection. The existing-Java amendment adds strict major-version
+and architecture detection plus an executable checksum record. Windows CI must compile the
+Windows-only discovery/downloader, bounded extraction, atomic activation, hidden process flags,
+and exact verified `java.exe` launch. Physical Windows evidence must additionally cover existing
+Java reuse, first fallback download, visible progress, automatic repair after deleting/changing a
+runtime file, unchanged system Java/PATH state, and Paper startup from both verified sources.
 
 Host 0.8.1 adds native tests for email normalization and safe mapping of Supabase Auth codes and
 HTTP failures. Physical Windows verification must cover a successful sign-in with surrounding

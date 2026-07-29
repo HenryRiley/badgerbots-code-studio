@@ -220,7 +220,7 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
     artifacts: [
       {
         id: "java",
-        label: "Managed Java 21",
+        label: "Verified Java 21",
         status: "missing",
         version: "pending",
         checksum: "pending",

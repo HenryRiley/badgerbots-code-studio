@@ -501,7 +501,9 @@ async fn prepare_runtime_artifacts(
     push_diagnostic(
         &mut snapshot,
         "HOST_ARTIFACTS_VERIFIED",
-        if prepared.java_repaired {
+        if prepared.java_source == "existing-system" {
+            "A compatible existing Java 21 installation was verified and selected, so no duplicate Java runtime was installed. Paper and the bundled plugin also passed verification."
+        } else if prepared.java_repaired {
             "Private Java 21 was repaired; its pinned archive and installed files passed verification. Paper and the bundled plugin also passed."
         } else {
             "Private Java 21, pinned Paper, and the bundled BadgerBots plugin passed checksum verification."
@@ -534,12 +536,16 @@ async fn repair_managed_java(
     apply_prepared_artifacts(&mut snapshot, &prepared);
     push_diagnostic(
         &mut snapshot,
-        if prepared.java_repaired {
+        if prepared.java_source == "existing-system" {
+            "EXISTING_JAVA_VERIFIED"
+        } else if prepared.java_repaired {
             "MANAGED_JAVA_REPAIRED"
         } else {
             "MANAGED_JAVA_VERIFIED"
         },
-        if prepared.java_repaired {
+        if prepared.java_source == "existing-system" {
+            "A compatible existing 64-bit Java 21 installation was verified and selected. No duplicate Java runtime was installed."
+        } else if prepared.java_repaired {
             "The private Java 21 runtime was replaced from the pinned archive and every installed file passed verification."
         } else {
             "Every file in the private Java 21 runtime passed verification; no repair was needed."

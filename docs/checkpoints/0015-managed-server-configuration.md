@@ -17,19 +17,21 @@ physical Windows verification remains required
   visibly advances to scoped firewall approval.
 - Host downloads the immutable pinned Paper 1.21.11 build, enforces the expected size and SHA-256,
   and never installs a failed download.
-- Host downloads the free pinned Eclipse Temurin JRE 21.0.11+10 Windows x64 ZIP during graphical
-  setup, enforces its 64 MiB archive and 256 MiB expansion bounds, and checks vendor SHA-256
+- Host first verifies compatible 64-bit Java 21 candidates from bounded standard Windows sources.
+  If none is available, it downloads the free pinned Eclipse Temurin JRE 21.0.11+10 Windows x64
+  ZIP, enforces its 64 MiB archive and 256 MiB expansion bounds, and checks vendor SHA-256
   `be26677aaa20b39a62edcaab4c8857a8b76673b0f45abc0b6143b142b62717e4`
   before extracting.
-- Java stays below `minecraft-runtime/managed-java`; Host does not invoke an MSI or read/change
+- Private Java stays below `minecraft-runtime/managed-java`; Host never invokes an MSI or changes
   global Java, PATH, `JAVA_HOME`, Java registry entries, or file associations.
 - Host rejects unsafe ZIP paths, links, multiple roots, unexpected file counts, and missing
   `bin/java.exe`/release metadata. It records and rechecks every installed file by size and
   SHA-256.
-- Every setup test and normal Paper start automatically verifies or repairs that private runtime.
+- Every setup test and normal Paper start automatically verifies the selected runtime or repairs
+  it through the graphical preparation path.
   **Verify & repair Java** exposes the operation on demand while Paper is stopped.
 - Download/check/install/repair phase, byte count, percentage, and outcome are visible inside Host.
-  Paper's process is created only from the verified private `java.exe`.
+  Paper's process is created only from the exact verified `java.exe` path.
 - Windows CI compiles/tests the BadgerBots Paper plugin and embeds it in the Host installer. Host
   verifies its JAR shape and records its SHA-256 when installing it.
 - A configuration-only recovery snapshot is created before first server launch.
