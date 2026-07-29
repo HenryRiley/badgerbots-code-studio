@@ -1,17 +1,19 @@
 schemaVersion: 1
-status: spike-candidate
+status: playable-prototype-pinned
 minecraftVersion: 1.21.11
 paper:
   apiCoordinate: io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT
-  serverBuild: pending
-  serverSha256: pending
+  serverBuild: 132
+  serverChannel: STABLE
+  serverPublishedAt: 2026-05-11T11:43:09Z
+  serverSha256: 5ffef465eeeb5f2a3c23a24419d97c51afd7dbb4923ff42df9a3f58bba1ccfba
 java:
   languageLevel: 21
-  vendor: pending-redistribution-review
+  vendor: user-installed-java-21-for-prototype
   runtimeArchiveSha256: pending
 gradle:
   version: 9.6.1
-  wrapperSha256: pending
+  wrapperDistributionSha256: 9c0f7faeeb306cb14e4279a3e084ca6b596894089a0638e68a07c945a32c9e14
 client:
   loader: pending
   loaderVersion: pending

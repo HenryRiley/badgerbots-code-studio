@@ -4,8 +4,11 @@ import {
   canStartServer,
   completeSetupStep,
   createInitialHostSnapshot,
+  hostErrorMessage,
   requestServerTransition,
   sanitizeDiagnosticText,
+  validateHostServiceInput,
+  validateServerConfiguration,
   type HostSnapshot,
 } from "./domain.js";
 
@@ -21,7 +24,23 @@ function readySnapshot(): HostSnapshot {
       version: "test-version",
       checksum: "a".repeat(64),
     })),
-    backup: { status: "verified", lastVerifiedAt: "2026-07-23T00:00:00.000Z" },
+    backup: {
+      status: "verified",
+      lastVerifiedAt: "2026-07-23T00:00:00.000Z",
+      latestId: "world-test",
+      backupCount: 1,
+      totalBytes: 8192,
+      snapshots: [
+        {
+          backupId: "world-test",
+          createdAt: "unix-1784764800",
+          reason: "automatic-before-start",
+          worldCount: 2,
+          fileCount: 10,
+          totalBytes: 8192,
+        },
+      ],
+    },
   };
 }
 
@@ -34,7 +53,6 @@ describe("Host setup and server safety model", () => {
         "First-run setup is incomplete.",
         "Readiness checks are incomplete or blocked.",
         "Managed Java, Paper, and plugin artifacts are not verified.",
-        "No verified recovery backup exists.",
       ],
     });
   });
@@ -94,5 +112,57 @@ describe("Host setup and server safety model", () => {
         "teacher@example.com token=abcdef password=hunter2 authorization:BearerSecretValue",
       ),
     ).toBe("[redacted-email] [redacted-secret] [redacted-secret] [redacted-secret]");
+  });
+
+  it("accepts only the public Supabase onboarding boundary", () => {
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "https://camp-project.supabase.co",
+        publishableKey: "sb_publishable_example-key-long-enough",
+      }),
+    ).toEqual([]);
+    expect(
+      validateHostServiceInput({
+        serviceUrl: "http://camp-project.supabase.co/rest/v1",
+        publishableKey: "sb_secret_never-place-this-in-the-host-form",
+      }),
+    ).toEqual([
+      "Use the bare HTTPS Supabase Project URL.",
+      "Use the browser-safe Supabase Publishable key.",
+    ]);
+  });
+
+  it("validates the managed Minecraft server form before native setup", () => {
+    expect(
+      validateServerConfiguration({
+        teacherUsername: "Teacher_01",
+        serverPort: 25565,
+        maxHeapGib: 4,
+        eulaAccepted: true,
+      }),
+    ).toEqual([]);
+    expect(
+      validateServerConfiguration({
+        teacherUsername: "../teacher",
+        serverPort: 80,
+        maxHeapGib: 16,
+        eulaAccepted: false,
+      }),
+    ).toEqual([
+      "Enter the teacher’s exact 3–16 character Minecraft Java username.",
+      "Choose a Minecraft port between 1024 and 65535.",
+      "Choose a server memory limit of 2, 4, 6, or 8 GiB.",
+      "Read and accept the Minecraft EULA before preparing the server.",
+    ]);
+  });
+
+  it("preserves actionable native command errors", () => {
+    expect(hostErrorMessage("Instructor sign-in failed.", "Fallback")).toBe(
+      "Instructor sign-in failed.",
+    );
+    expect(hostErrorMessage(new Error("Network unavailable."), "Fallback")).toBe(
+      "Network unavailable.",
+    );
+    expect(hostErrorMessage({ message: "untrusted shape" }, "Fallback")).toBe("Fallback");
   });
 });

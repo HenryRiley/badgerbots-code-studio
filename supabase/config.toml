@@ -1,0 +1,4 @@
+project_id = "badgerbots-code-studio"
+
+[functions.classroom-api]
+verify_jwt = false

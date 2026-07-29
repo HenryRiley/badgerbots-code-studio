@@ -87,4 +87,153 @@ describe("portable control-plane migration", () => {
     expect(sql).toContain("grant execute on function public.bootstrap_owner");
     expect(sql).not.toContain("grant select on public.campers to anon");
   });
+
+  it("atomically saves caller-generated version UUIDs for database-backed prototypes", async () => {
+    const sql = await readFile(
+      resolve(root, "database/migrations/0003_atomic_program_version_ids.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create function public.save_program_version_v2");
+    expect(sql).toContain("created_version_id uuid");
+    expect(sql).toContain("for update;");
+    expect(sql).toContain("id, workspace_id, revision");
+    expect(sql).toContain("grant execute on function public.save_program_version_v2");
+  });
+
+  it("keeps short-lived prototype recovery encrypted and service-role only", async () => {
+    const sql = await readFile(
+      resolve(root, "database/migrations/0004_prototype_lab_recovery.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create table public.prototype_lab_recovery");
+    expect(sql).toContain("encrypted_payload text not null");
+    expect(sql).toContain("enable row level security");
+    expect(sql).toContain("revoke all on public.prototype_lab_recovery from anon, authenticated");
+    expect(sql).toContain("recovery_expires_at > now() + interval '5 hours'");
+    expect(sql).toContain("grant execute on function public.load_prototype_lab_recovery");
+  });
+
+  it("adds private camper realtime identity and a durable outbound Host queue", async () => {
+    const core = await readFile(
+      resolve(root, "database/migrations/0005_connected_classroom.sql"),
+      "utf8",
+    );
+    const security = await readFile(
+      resolve(root, "database/providers/supabase/0006_connected_classroom_security.sql"),
+      "utf8",
+    );
+    expect(core).toContain("add column auth_subject uuid unique");
+    expect(core).toContain("create table public.classroom_commands");
+    expect(core).toContain("create table public.owner_bootstrap_state");
+    expect(core).toContain("normalized_email not like 'prototype-%@invalid.example'");
+    expect(core).toContain("unique (host_installation_id, sequence)");
+    expect(core).toContain("for update skip locked");
+    expect(core).toContain("record_failed_classroom_join");
+    expect(core).toContain("alter table public.classroom_commands enable row level security");
+    expect(core).not.toContain("pairing_credential_ciphertext");
+    expect(security).toContain("create function app.current_camper_id()");
+    expect(security).toContain("create policy workspaces_camper_select");
+    expect(security).not.toContain("grant select on public.sessions to anon");
+    expect(security).toContain(
+      "alter publication supabase_realtime add table public.classroom_commands",
+    );
+  });
+
+  it("recovers only a confirmed replacement for a deleted instructor identity", async () => {
+    const sql = await readFile(
+      resolve(root, "database/providers/supabase/0007_instructor_identity_recovery.sql"),
+      "utf8",
+    );
+    expect(sql).toContain("create or replace function public.rebind_deleted_instructor_identity");
+    expect(sql).toContain("email_confirmed_at is not null");
+    expect(sql).toContain("where id = prior_auth_subject");
+    expect(sql).toContain("raise exception 'prior auth identity still exists'");
+    expect(sql).toContain("'instructor_auth_subject_rebound'");
+    expect(sql).toContain("revoke all on function public.rebind_deleted_instructor_identity");
+    expect(sql).toContain("to service_role");
+    expect(sql).not.toContain(
+      "grant execute on function public.rebind_deleted_instructor_identity(uuid, text) to authenticated",
+    );
+  });
+
+  it("atomically maps enrolled devices to one active Minecraft player", async () => {
+    const core = await readFile(
+      resolve(root, "database/migrations/0008_device_player_routing.sql"),
+      "utf8",
+    );
+    const security = await readFile(
+      resolve(root, "database/providers/supabase/0009_device_player_routing_security.sql"),
+      "utf8",
+    );
+    expect(core).toContain("minecraft_mappings_one_active_device_idx");
+    expect(core).toContain("minecraft_mappings_one_active_username_idx");
+    expect(core).toContain("where active");
+    expect(core).toContain(
+      "create or replace function public.set_session_device_minecraft_mapping",
+    );
+    expect(core).toContain("join public.session_instructors assignment");
+    expect(core).toContain("for update of enrollment");
+    expect(core).toContain("lower(minecraft_username) = lower(requested_minecraft_username)");
+    expect(core).toContain("revoke all on function");
+    expect(core).toContain("from public");
+    expect(security).toContain("revoke all on function");
+    expect(security).toContain("to service_role");
+    expect(security).not.toContain("to authenticated");
+  });
+
+  it("deploys cloud changes centrally without placing admin secrets in installers", async () => {
+    const workflow = await readFile(resolve(root, ".github/workflows/deploy-supabase.yml"), "utf8");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("environment: production");
+    expect(workflow).toContain("secrets.SUPABASE_ACCESS_TOKEN");
+    expect(workflow).toContain("secrets.SUPABASE_DB_URL");
+    expect(workflow).toContain("secrets.SUPABASE_PROJECT_REF");
+    expect(workflow).toContain("0007_instructor_identity_recovery.sql");
+    expect(workflow).toContain("0008_device_player_routing.sql");
+    expect(workflow).toContain("0009_device_player_routing_security.sql");
+    expect(workflow).toContain("functions deploy classroom-api");
+    expect(workflow).not.toContain("VITE_BADGERBOTS_SUPABASE_SECRET");
+    expect(workflow).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+  });
+
+  it("guards the complete test reset and bootstraps exactly one confirmed replacement owner", async () => {
+    const reset = await readFile(
+      resolve(root, "database/operations/complete-test-pilot-reset.sql"),
+      "utf8",
+    );
+    const bootstrap = await readFile(
+      resolve(root, "database/operations/bootstrap-existing-test-owner.sql"),
+      "utf8",
+    );
+    for (const table of [
+      "classroom_commands",
+      "audit_records",
+      "active_worlds",
+      "program_versions",
+      "project_workspaces",
+      "campers",
+      "minecraft_mappings",
+      "devices",
+      "sessions",
+      "host_installations",
+      "memberships",
+      "instructors",
+      "locations",
+      "curriculum_versions",
+      "world_template_versions",
+      "organizations",
+      "owner_bootstrap_state",
+      "prototype_lab_recovery",
+    ]) {
+      expect(reset).toContain(`public.${table}`);
+    }
+    expect(reset).toContain("TYPE_CONFIRMATION_HERE");
+    expect(reset).toContain("RESET_BADGERBOTS_TEST_PILOT");
+    expect(reset).not.toContain("truncate table auth.");
+    expect(reset).not.toMatch(/\bdrop\s+(table|schema)\b/i);
+    expect(bootstrap).toContain("active_auth_user_count <> 1");
+    expect(bootstrap).toContain("email_confirmed_at is not null");
+    expect(bootstrap).toContain("perform public.bootstrap_owner");
+    expect(bootstrap).not.toMatch(/\b(password|encrypted_password)\s*:=/i);
+  });
 });

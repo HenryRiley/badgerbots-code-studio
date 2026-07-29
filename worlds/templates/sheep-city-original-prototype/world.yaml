@@ -1,8 +1,16 @@
 schemaVersion: 1
 id: sheep-city-original-prototype
-status: asset-required
-minecraftVersion: pending-version-spike
-spawn: pending
-worldBorder: pending
+status: draft
+minecraftVersion: 1.21.11
+spawn:
+  x: 0.5
+  y: 65
+  z: 0.5
+  yaw: 90
+  pitch: 0
+worldBorder:
+  centerX: 0
+  centerZ: 0
+  diameter: 192
 preGenerated: true
 resetPolicy: restore-from-immutable-template

@@ -67,10 +67,42 @@ public final class PaperRuntimeGateway {
     runtime.stop(scope);
   }
 
+  public synchronized void stopStudent(String sessionId, String projectId, String studentId) {
+    for (Map.Entry<UUID, ScopeKey> entry : Map.copyOf(players).entrySet()) {
+      ScopeKey scope = entry.getValue();
+      if (scope.sessionId().equals(sessionId)
+          && scope.projectId().equals(projectId)
+          && scope.studentId().equals(studentId)) {
+        stopPlayer(entry.getKey());
+      }
+    }
+  }
+
+  public synchronized String activeProgramVersion(
+      String sessionId, String projectId, String studentId) {
+    for (ScopeKey scope : players.values()) {
+      if (scope.sessionId().equals(sessionId)
+          && scope.projectId().equals(projectId)
+          && scope.studentId().equals(studentId)) {
+        return scope.programVersionId();
+      }
+    }
+    return null;
+  }
+
   public synchronized void stopWorld(UUID worldId) {
     for (Map.Entry<UUID, ScopeKey> entry : Map.copyOf(players).entrySet()) {
       if (entry.getValue().worldId().equals(worldId.toString())) stopPlayer(entry.getKey());
     }
+  }
+
+  synchronized void executeBenchmarkEvent(
+      ScopeKey scope,
+      InstructionGraph.EventType event,
+      UUID sheepId,
+      Location location) {
+    requireWorld(scope, location);
+    runtime.execute(scope, context(event, null, sheepId, location));
   }
 
   private static GameAdapter.EventContext context(

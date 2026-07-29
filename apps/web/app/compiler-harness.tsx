@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Blockly,
   blockCatalog,
@@ -14,7 +15,6 @@ import {
 } from "@badgerbots/block-editor";
 import { formatProgram, parseProgram } from "@badgerbots/java-dsl";
 import {
-  migrateProgram,
   sheepCityCompletedExample,
   sheepCityStarterProgram,
   validateProgram,
@@ -22,8 +22,12 @@ import {
   type ScriptKind,
 } from "@badgerbots/program-model";
 import { compileInstructionGraph } from "@badgerbots/runtime-protocol";
-
-const STORAGE_KEY = "badgerbots:checkpoint1:sheep-city";
+import {
+  loadLocalEditorState,
+  saveLocalEditorState,
+  type LocalEditorState,
+} from "./local-editor-storage";
+import { autosaveBoundProgram } from "./classroom/classroom-api";
 
 interface ConsoleEntry {
   id: number;
@@ -31,14 +35,25 @@ interface ConsoleEntry {
   message: string;
 }
 
+interface SaveStatus {
+  kind: "loading" | "saving" | "saved" | "draft" | "error";
+  message: string;
+}
+
 export function CompilerHarness() {
+  const classroomHostedAtRoot = process.env.NEXT_PUBLIC_BADGERBOTS_CLASSROOM_AT_ROOT === "1";
   const [program, setProgram] = useState<Program>(() => structuredClone(sheepCityStarterProgram));
   const [activeScript, setActiveScript] = useState<ScriptKind>("player");
   const [mode, setMode] = useState<"blocks" | "text">("blocks");
   const [instructorTools, setInstructorTools] = useState(false);
   const [search, setSearch] = useState("");
   const [text, setText] = useState(() => formatProgram(sheepCityStarterProgram));
-  const [savedAt, setSavedAt] = useState<string>("Not saved yet");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({
+    kind: "loading",
+    message: "Loading local work…",
+  });
+  const [workspaceSyncVersion, setWorkspaceSyncVersion] = useState(0);
+  const [editorLoaded, setEditorLoaded] = useState(false);
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
     {
       id: 1,
@@ -49,6 +64,12 @@ export function CompilerHarness() {
   const mountRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
   const programRef = useRef(program);
+  const editorStateRef = useRef<LocalEditorState>({
+    editorStateVersion: 1,
+    program,
+    workspaceDrafts: {},
+  });
+  const commitWorkspaceRef = useRef<(() => boolean) | null>(null);
   const suppressBlocklyEvents = useRef(false);
   const entryId = useRef(2);
 
@@ -62,34 +83,100 @@ export function CompilerHarness() {
     });
   }, []);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    try {
-      const restored = migrateProgram(JSON.parse(stored));
-      if (!validateProgram(restored).ok)
-        throw new Error("The saved program did not pass validation.");
-      setProgram(restored);
-      setText(formatProgram(restored));
-      writeConsole("success", "Restored the last acknowledged local program.");
-    } catch (error) {
-      writeConsole(
-        "error",
-        `Saved work could not be restored: ${error instanceof Error ? error.message : "unknown error"}`,
-      );
-    }
-  }, [writeConsole]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(program));
-    setSavedAt(
-      new Intl.DateTimeFormat(undefined, {
+  const persistEditorState = useCallback(
+    (state: LocalEditorState, kind: SaveStatus["kind"] = "saved") => {
+      editorStateRef.current = state;
+      const result = saveLocalEditorState(localStorage, state);
+      if (!result.ok) {
+        setSaveStatus({ kind: "error", message: `Local save failed: ${result.message}` });
+        writeConsole("error", `Local save failed: ${result.message}`);
+        return false;
+      }
+      const time = new Intl.DateTimeFormat(undefined, {
         hour: "numeric",
         minute: "2-digit",
         second: "2-digit",
-      }).format(new Date()),
-    );
-  }, [program]);
+      }).format(new Date());
+      setSaveStatus({
+        kind,
+        message:
+          kind === "draft"
+            ? `Editor draft saved at ${time}; runnable code remains on the last valid version`
+            : `Local program and blocks saved at ${time}`,
+      });
+      return true;
+    },
+    [writeConsole],
+  );
+
+  useEffect(() => {
+    const restored = loadLocalEditorState(localStorage);
+    if (restored.kind === "loaded") {
+      editorStateRef.current = restored.state;
+      programRef.current = restored.state.program;
+      setProgram(restored.state.program);
+      setText(restored.state.textDraft ?? formatProgram(restored.state.program));
+      setWorkspaceSyncVersion((version) => version + 1);
+      setSaveStatus(
+        restored.state.textDraft === undefined
+          ? { kind: "saved", message: "Restored saved local program and blocks" }
+          : {
+              kind: "draft",
+              message: "Restored an editor draft; runnable code remains on the last valid version",
+            },
+      );
+      writeConsole("success", "Restored the last acknowledged local program and visual draft.");
+      setEditorLoaded(true);
+      return;
+    }
+    if (restored.kind === "error") {
+      writeConsole(
+        "error",
+        `Saved work could not be restored: ${restored.message}. It was not overwritten.`,
+      );
+      setSaveStatus({ kind: "error", message: "Existing local save could not be read" });
+      setEditorLoaded(true);
+      return;
+    }
+    persistEditorState(editorStateRef.current);
+    setEditorLoaded(true);
+  }, [persistEditorState, writeConsole]);
+
+  useEffect(() => {
+    if (!editorLoaded) return;
+    const timeout = window.setTimeout(() => {
+      void autosaveBoundProgram(program)
+        .then((result) => {
+          if (result.kind === "saved") {
+            setSaveStatus({
+              kind: "saved",
+              message: `Local save acknowledged; cloud revision ${result.revision} synced`,
+            });
+            writeConsole("success", `Cloud autosave accepted revision ${result.revision}.`);
+          } else if (result.kind === "conflict") {
+            setSaveStatus({
+              kind: "error",
+              message: `Cloud conflict at revision ${result.actualRevision}; local blocks are preserved`,
+            });
+            writeConsole(
+              "error",
+              `Cloud revision ${result.actualRevision} changed first. Your local blocks were preserved; return to Connected Classroom to review before retrying.`,
+            );
+          }
+        })
+        .catch((caught: unknown) => {
+          setSaveStatus({
+            kind: "error",
+            message: "Local save is safe; cloud autosave is offline",
+          });
+          writeConsole(
+            "error",
+            `Cloud autosave failed: ${caught instanceof Error ? caught.message : "unknown error"}. Local work is still saved.`,
+          );
+        });
+    }, 1_500);
+    return () => window.clearTimeout(timeout);
+  }, [editorLoaded, program, writeConsole]);
 
   useEffect(() => {
     if (!mountRef.current || workspaceRef.current) return;
@@ -104,15 +191,49 @@ export function CompilerHarness() {
     });
     workspaceRef.current = workspace;
     suppressBlocklyEvents.current = true;
-    scriptToWorkspace(getScript(programRef.current, activeScript), workspace);
-    suppressBlocklyEvents.current = false;
+    Blockly.Events.disable();
+    try {
+      const draft = editorStateRef.current.workspaceDrafts[activeScript];
+      if (draft) {
+        try {
+          Blockly.serialization.workspaces.load(draft, workspace);
+        } catch (error) {
+          writeConsole(
+            "error",
+            `The ${activeScript} visual draft could not be restored; the last valid program was used. ${
+              error instanceof Error ? error.message : ""
+            }`,
+          );
+          scriptToWorkspace(getScript(programRef.current, activeScript), workspace);
+        }
+      } else {
+        scriptToWorkspace(getScript(programRef.current, activeScript), workspace);
+      }
+    } finally {
+      Blockly.Events.enable();
+      suppressBlocklyEvents.current = false;
+    }
 
     let pendingCommit: ReturnType<typeof setTimeout> | undefined;
-    const commitWorkspace = () => {
+    let workspaceDirty = false;
+    const commitWorkspace = (): boolean => {
+      if (pendingCommit) {
+        clearTimeout(pendingCommit);
+        pendingCommit = undefined;
+      }
       if (workspace.isDragging()) {
         pendingCommit = setTimeout(commitWorkspace, 50);
-        return;
+        return false;
       }
+      const workspaceDraft = Blockly.serialization.workspaces.save(workspace);
+      const workspaceDrafts = {
+        ...editorStateRef.current.workspaceDrafts,
+        [activeScript]: workspaceDraft,
+      };
+      const preservedTextDraft =
+        !workspaceDirty && editorStateRef.current.textDraft !== undefined
+          ? { textDraft: editorStateRef.current.textDraft }
+          : {};
       try {
         const current = getScript(programRef.current, activeScript);
         const script = workspaceToScript(workspace, {
@@ -121,35 +242,67 @@ export function CompilerHarness() {
           displayName: current.displayName,
         });
         const nextProgram = replaceProgramScript(programRef.current, script);
+        programRef.current = nextProgram;
         setProgram(nextProgram);
+        persistEditorState(
+          {
+            editorStateVersion: 1,
+            program: nextProgram,
+            workspaceDrafts,
+            ...preservedTextDraft,
+          },
+          preservedTextDraft.textDraft === undefined ? "saved" : "draft",
+        );
+        workspaceDirty = false;
+        return true;
       } catch (error) {
+        persistEditorState(
+          {
+            editorStateVersion: 1,
+            program: programRef.current,
+            workspaceDrafts,
+            ...preservedTextDraft,
+          },
+          "draft",
+        );
+        workspaceDirty = false;
         writeConsole(
           "error",
           error instanceof Error ? error.message : "Blockly conversion failed.",
         );
+        return false;
       }
     };
+    commitWorkspaceRef.current = commitWorkspace;
     const listener = (event: Blockly.Events.Abstract) => {
-      if (suppressBlocklyEvents.current || event.isUiEvent) return;
+      if (suppressBlocklyEvents.current || event.isUiEvent || !event.recordUndo) return;
       if (pendingCommit) clearTimeout(pendingCommit);
+      workspaceDirty = true;
+      setSaveStatus({ kind: "saving", message: "Saving local changes…" });
       pendingCommit = setTimeout(commitWorkspace, 75);
     };
     workspace.addChangeListener(listener);
     return () => {
       if (pendingCommit) clearTimeout(pendingCommit);
+      commitWorkspaceRef.current = null;
       workspace.removeChangeListener(listener);
       workspace.dispose();
       workspaceRef.current = null;
     };
-  }, [activeScript, writeConsole]);
+  }, [activeScript, persistEditorState, workspaceSyncVersion, writeConsole]);
 
   useEffect(() => {
-    const workspace = workspaceRef.current;
-    if (!workspace || mode !== "blocks") return;
-    suppressBlocklyEvents.current = true;
-    scriptToWorkspace(getScript(program, activeScript), workspace);
-    suppressBlocklyEvents.current = false;
-  }, [activeScript, mode]);
+    const flush = () => commitWorkspaceRef.current?.();
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, []);
 
   useEffect(() => {
     workspaceRef.current?.updateToolbox(createToolbox(search));
@@ -158,13 +311,20 @@ export function CompilerHarness() {
   const searchResults = useMemo(() => searchBlockCatalog(search), [search]);
 
   const chooseScript = (scriptKind: ScriptKind) => {
+    commitWorkspaceRef.current?.();
     setActiveScript(scriptKind);
     setMode("blocks");
   };
 
   const switchMode = (nextMode: "blocks" | "text") => {
     if (nextMode === "text" && !instructorTools) return;
-    if (nextMode === "text") setText(formatProgram(program));
+    if (nextMode === "text") {
+      if (!commitWorkspaceRef.current?.()) {
+        writeConsole("error", "Connect or complete all blocks before opening text mode.");
+        return;
+      }
+      setText(editorStateRef.current.textDraft ?? formatProgram(programRef.current));
+    }
     setMode(nextMode);
   };
 
@@ -178,8 +338,16 @@ export function CompilerHarness() {
       );
       return;
     }
+    programRef.current = result.program;
     setProgram(result.program);
     setText(formatProgram(result.program));
+    const nextState: LocalEditorState = {
+      editorStateVersion: 1,
+      program: result.program,
+      workspaceDrafts: {},
+    };
+    persistEditorState(nextState);
+    setWorkspaceSyncVersion((version) => version + 1);
     writeConsole(
       "success",
       "Supported text parsed into the canonical AST. Blocks are ready to regenerate.",
@@ -187,13 +355,20 @@ export function CompilerHarness() {
   };
 
   const validate = () => {
-    const result = validateProgram(program);
+    if (mode === "blocks" && !commitWorkspaceRef.current?.()) {
+      writeConsole(
+        "error",
+        "The visual draft is saved, but incomplete or loose blocks cannot run.",
+      );
+      return;
+    }
+    const result = validateProgram(programRef.current);
     if (!result.ok) {
       for (const diagnostic of result.diagnostics.slice(0, 5))
         writeConsole("error", diagnostic.message);
       return;
     }
-    const graph = compileInstructionGraph(program);
+    const graph = compileInstructionGraph(programRef.current);
     const instructionCount = graph.handlers.reduce(
       (total, handler) => total + handler.instructions.length,
       0,
@@ -206,8 +381,11 @@ export function CompilerHarness() {
 
   const loadFixture = (fixture: Program, label: string) => {
     const copy = structuredClone(fixture);
+    programRef.current = copy;
     setProgram(copy);
     setText(formatProgram(copy));
+    persistEditorState({ editorStateVersion: 1, program: copy, workspaceDrafts: {} });
+    setWorkspaceSyncVersion((version) => version + 1);
     writeConsole("info", `${label} loaded into local browser storage.`);
   };
 
@@ -223,15 +401,31 @@ export function CompilerHarness() {
             <h1>Sheep City compiler proof</h1>
           </div>
         </div>
-        <div className="proof-badge">
-          <span aria-hidden="true" />
-          Checkpoint 1 · browser only
+        <div className="header-actions">
+          <Link className="header-link" href={classroomHostedAtRoot ? "/" : "/classroom"}>
+            Connected classroom
+          </Link>
+          {classroomHostedAtRoot ? null : (
+            <>
+              <Link className="header-link" href="/curriculum">
+                Curriculum lab
+              </Link>
+              <Link className="header-link" href="/prototype">
+                Connected prototype
+              </Link>
+            </>
+          )}
+          <div className="proof-badge">
+            <span aria-hidden="true" />
+            {classroomHostedAtRoot ? "Internal classroom prototype" : "Checkpoint 1 · browser only"}
+          </div>
         </div>
       </header>
 
       <section className="notice" aria-label="Prototype limitation">
-        <strong>No Minecraft connection:</strong> this harness proves blocks, text, validation,
-        serialization, and local autosave only.
+        <strong>Block editor:</strong> work saves locally immediately. When opened from Connected
+        Classroom, valid canonical changes also autosave to that cloud workspace after 1.5 seconds;
+        Run remains an explicit classroom action.
       </section>
 
       <section className="workspace-card">
@@ -320,7 +514,11 @@ export function CompilerHarness() {
                   aria-label="Restricted Java-style program"
                   spellCheck={false}
                   value={text}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setText(value);
+                    persistEditorState({ ...editorStateRef.current, textDraft: value }, "draft");
+                  }}
                 />
                 <button className="primary" type="button" onClick={applyText}>
                   Parse text into blocks
@@ -331,8 +529,11 @@ export function CompilerHarness() {
         </div>
 
         <footer className="actionbar">
-          <div className="save-state">
-            <span aria-hidden="true">✓</span> Local save acknowledged at {savedAt}
+          <div className={`save-state ${saveStatus.kind}`} role="status">
+            <span aria-hidden="true">
+              {saveStatus.kind === "saved" ? "✓" : saveStatus.kind === "error" ? "!" : "•"}
+            </span>
+            {saveStatus.message}
           </div>
           <div className="actions">
             <button

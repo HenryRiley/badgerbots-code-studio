@@ -7,6 +7,7 @@ const gateway = createConnectGateway();
 export function ConnectApp() {
   const [snapshot, setSnapshot] = useState<ConnectSnapshot>();
   const [error, setError] = useState<string>();
+  const [message, setMessage] = useState<string>();
   const gate = useMemo(() => (snapshot ? readiness(snapshot) : undefined), [snapshot]);
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export function ConnectApp() {
         </span>
       </header>
 
+      {message ? <div className="action-message">{message}</div> : null}
       <section className={`readiness ${gate?.allowed ? "ready" : "blocked"}`}>
         <div>
           <p className="eyebrow">Minecraft readiness</p>
@@ -60,7 +62,29 @@ export function ConnectApp() {
               : "Connect will not modify Minecraft until identity, launcher, and artifact checks pass."}
           </p>
         </div>
-        <strong>{gate?.allowed ? "READY" : "LOCKED"}</strong>
+        <div className="readiness-actions">
+          <strong>{gate?.allowed ? "READY" : "SETUP"}</strong>
+          <button
+            type="button"
+            className="coding-console-button"
+            onClick={() => {
+              setError(undefined);
+              void gateway
+                .openCodingConsole()
+                .then(setMessage)
+                .catch((reason: unknown) =>
+                  setError(
+                    reason instanceof Error
+                      ? reason.message
+                      : "The coding console could not be opened.",
+                  ),
+                );
+            }}
+          >
+            Open coding console
+          </button>
+          <small>Links this device to the weekly camper join.</small>
+        </div>
       </section>
 
       <section className="grid">

@@ -1,0 +1,105 @@
+name: Deploy classroom Web to Apache
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-classroom to publish the reviewed Web build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: badgerbots-classroom-web
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and publish /classroom
+    if: github.event.inputs.confirmation == 'deploy-classroom'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: classroom-prototype
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+
+      - name: Install Node.js
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Validate deployment settings
+        shell: bash
+        env:
+          BADGERBOTS_WEB_URL: ${{ vars.BADGERBOTS_WEB_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.BADGERBOTS_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.BADGERBOTS_SUPABASE_PUBLISHABLE_KEY }}
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          SFTP_HOST_KEY: ${{ secrets.SFTP_HOST_KEY }}
+          SFTP_REMOTE_CLASSROOM_DIR: ${{ secrets.SFTP_REMOTE_CLASSROOM_DIR }}
+        run: |
+          test "$BADGERBOTS_WEB_URL" = "https://henrydriley.com/classroom"
+          case "$NEXT_PUBLIC_SUPABASE_URL" in
+            https://*.supabase.co) ;;
+            *) echo "BADGERBOTS_SUPABASE_URL must be an HTTPS Supabase project URL." >&2; exit 1 ;;
+          esac
+          test -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+          test -n "$SFTP_HOST"
+          test -n "$SFTP_PORT"
+          test -n "$SFTP_USERNAME"
+          test -n "$SFTP_PRIVATE_KEY"
+          test -n "$SFTP_HOST_KEY"
+          case "$SFTP_REMOTE_CLASSROOM_DIR" in
+            /classroom|/*/classroom) ;;
+            *) echo "SFTP_REMOTE_CLASSROOM_DIR must end exactly in /classroom." >&2; exit 1 ;;
+          esac
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the /classroom static export
+        run: pnpm --filter @badgerbots/web build
+        env:
+          BADGERBOTS_CLASSROOM_STATIC_DEPLOYMENT: "1"
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.BADGERBOTS_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.BADGERBOTS_SUPABASE_PUBLISHABLE_KEY }}
+
+      - name: Create bounded Apache package
+        run: pnpm web:package:classroom
+
+      - name: Preserve reviewed deployment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: badgerbots-classroom-web-${{ github.sha }}
+          path: installers/artifacts/classroom-web
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
+      - name: Publish without touching the parent website
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          SFTP_HOST_KEY: ${{ secrets.SFTP_HOST_KEY }}
+          SFTP_REMOTE_CLASSROOM_DIR: ${{ secrets.SFTP_REMOTE_CLASSROOM_DIR }}
+        run: bash scripts/deploy-classroom-sftp.sh
+
+      - name: Verify the public classroom page
+        run: |
+          curl --fail --silent --show-error --retry 5 \
+            https://henrydriley.com/classroom/ |
+            grep -F "BadgerBots Code Studio"

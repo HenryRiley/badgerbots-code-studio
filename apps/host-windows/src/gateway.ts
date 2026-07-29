@@ -2,9 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   completeSetupStep,
   createInitialHostSnapshot,
-  requestServerTransition,
+  type HostOnboardingView,
   type HostSnapshot,
+  type InstructorProfile,
+  type ServerConfigurationInput,
+  type SignInResult,
   type SetupStepId,
+  type WorldBackupSnapshot,
 } from "./domain.js";
 
 declare global {
@@ -15,24 +19,268 @@ declare global {
 
 export interface HostGateway {
   load(): Promise<HostSnapshot>;
+  onboarding(): Promise<HostOnboardingView>;
+  configureService(serviceUrl: string, publishableKey: string): Promise<HostOnboardingView>;
+  clearServiceConfiguration(): Promise<HostOnboardingView>;
+  signIn(email: string, password: string): Promise<SignInResult>;
+  pairHost(
+    organizationId: string,
+    locationId: string,
+    displayName: string,
+  ): Promise<HostOnboardingView>;
+  signOut(): Promise<HostOnboardingView>;
+  probeHardware(): Promise<HostSnapshot>;
+  configureServer(input: ServerConfigurationInput): Promise<HostSnapshot>;
+  prepareRuntimeArtifacts(): Promise<HostSnapshot>;
+  repairManagedJava(): Promise<HostSnapshot>;
+  approveFirewall(): Promise<HostSnapshot>;
+  testServer(): Promise<HostSnapshot>;
+  startServer(): Promise<HostSnapshot>;
+  stopServer(): Promise<HostSnapshot>;
+  runCapacityBenchmark(strategy: "separate-worlds" | "shared-instances"): Promise<HostSnapshot>;
+  recoverServer(): Promise<HostSnapshot>;
+  createWorldBackup(): Promise<HostSnapshot>;
+  restoreWorldBackup(backupId: string): Promise<HostSnapshot>;
+  resetSheepCityWorld(): Promise<HostSnapshot>;
   completeStep(stepId: SetupStepId, detail: string): Promise<HostSnapshot>;
-  transition(
-    action: "start" | "mark_running" | "stop" | "mark_stopped" | "crash",
-  ): Promise<HostSnapshot>;
   resetPreview(): Promise<HostSnapshot>;
 }
 
 export function createHostGateway(): HostGateway {
   if (window.__TAURI_INTERNALS__) return nativeGateway;
   let snapshot = createInitialHostSnapshot("browser_preview");
+  let onboarding: HostOnboardingView = {
+    serviceConfigured: false,
+    signedIn: false,
+    paired: false,
+    credentialProtection: "Preview only — no credential is stored",
+  };
+  const previewProfile: InstructorProfile = {
+    memberships: [{ organizationId: "preview-organization", role: "owner" }],
+    organizations: [{ id: "preview-organization", name: "BadgerBots preview" }],
+    locations: [
+      {
+        id: "preview-location",
+        organizationId: "preview-organization",
+        name: "Madison preview",
+      },
+    ],
+  };
   return {
     load: () => Promise.resolve(structuredClone(snapshot)),
-    completeStep: (stepId, detail) => {
-      snapshot = completeSetupStep(snapshot, stepId, detail);
+    onboarding: () => Promise.resolve(structuredClone(onboarding)),
+    configureService: (serviceUrl) => {
+      onboarding = {
+        ...onboarding,
+        serviceConfigured: true,
+        serviceUrl,
+      };
+      return Promise.resolve(structuredClone(onboarding));
+    },
+    clearServiceConfiguration: () => {
+      onboarding = {
+        serviceConfigured: false,
+        signedIn: false,
+        paired: false,
+        credentialProtection: "Preview only — no credential is stored",
+      };
+      return Promise.resolve(structuredClone(onboarding));
+    },
+    signIn: (email) => {
+      onboarding = { ...onboarding, signedIn: true, instructorEmail: email };
+      snapshot = completeSetupStep(
+        snapshot,
+        "instructor_sign_in",
+        "Preview identity — no credential stored.",
+      );
+      return Promise.resolve({
+        onboarding: structuredClone(onboarding),
+        profile: structuredClone(previewProfile),
+      });
+    },
+    pairHost: (_organizationId, _locationId, displayName) => {
+      onboarding = {
+        ...onboarding,
+        paired: true,
+        organizationName: "BadgerBots preview",
+        locationName: "Madison preview",
+        hostId: "preview-host",
+        hostDisplayName: displayName,
+      };
+      snapshot = completeSetupStep(snapshot, "location", "Madison preview");
+      return Promise.resolve(structuredClone(onboarding));
+    },
+    signOut: () => {
+      onboarding = { ...onboarding, signedIn: false };
+      return Promise.resolve(structuredClone(onboarding));
+    },
+    probeHardware: () => {
+      snapshot = {
+        ...snapshot,
+        readiness: snapshot.readiness.map((check) =>
+          check.id === "platform" || check.id === "memory"
+            ? {
+                ...check,
+                status: "warning",
+                measured: "Browser preview — native measurement unavailable",
+              }
+            : check,
+        ),
+      };
+      snapshot = completeSetupStep(
+        snapshot,
+        "hardware_readiness",
+        "Browser preview of native readiness evidence.",
+      );
       return Promise.resolve(structuredClone(snapshot));
     },
-    transition: (action) => {
-      snapshot = requestServerTransition(snapshot, action);
+    configureServer: (input) => {
+      snapshot = completeSetupStep(
+        snapshot,
+        "server_configuration",
+        `Private server on port ${input.serverPort} with a ${input.maxHeapGib} GiB limit.`,
+      );
+      snapshot = completeSetupStep(
+        snapshot,
+        "teacher_minecraft_mapping",
+        `Teacher Minecraft username: ${input.teacherUsername}`,
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    prepareRuntimeArtifacts: () => {
+      snapshot = {
+        ...snapshot,
+        artifacts: snapshot.artifacts.map((artifact) => ({
+          ...artifact,
+          status: "verified",
+          version:
+            artifact.id === "java"
+              ? "openjdk version 21 (preview)"
+              : artifact.id === "paper"
+                ? "Paper 1.21.11 build 132"
+                : "BadgerBots Paper plugin 0.6.1-prototype",
+          checksum: artifact.id === "java" ? "b".repeat(64) : "a".repeat(64),
+        })),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    repairManagedJava: () => Promise.resolve(structuredClone(snapshot)),
+    approveFirewall: () => {
+      snapshot = completeSetupStep(
+        snapshot,
+        "firewall_approval",
+        "Preview of Windows Private-network TCP approval.",
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    testServer: () => {
+      snapshot = {
+        ...snapshot,
+        readiness: snapshot.readiness.map((check) =>
+          check.id === "network"
+            ? {
+                ...check,
+                status: "warning",
+                measured: "Preview loopback test passed; camp Wi-Fi test remains.",
+              }
+            : check,
+        ),
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          lastExit: "clean",
+          recoveryRequired: false,
+        },
+        serverLogs: [
+          "[Paper] BadgerBots Sheep City runtime loaded.",
+          "[Paper] Authenticated BadgerBots Host bridge is ready.",
+          '[Paper] Done (preview)! For help, type "help"',
+          "[Paper] Stopping server",
+        ],
+      };
+      snapshot = completeSetupStep(
+        snapshot,
+        "test_server",
+        "Preview Paper readiness and clean shutdown passed.",
+      );
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    startServer: () => {
+      snapshot = previewBackup(snapshot, "automatic-before-start");
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "running",
+          activeCamp: true,
+          sleepInhibition: "active",
+          lastExit: "unknown",
+        },
+        serverLogs: [
+          ...snapshot.serverLogs,
+          "[Host] Starting the managed classroom server…",
+          '[Paper] Done (preview)! For help, type "help"',
+        ].slice(-80),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    stopServer: () => {
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          activeCamp: false,
+          sleepInhibition: "inactive",
+          lastExit: "clean",
+        },
+        serverLogs: [...snapshot.serverLogs, "[Paper] Stopping server"].slice(-80),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    runCapacityBenchmark: (strategy) => {
+      snapshot = {
+        ...snapshot,
+        serverLogs: [
+          ...snapshot.serverLogs,
+          `[Paper] Started the 25-student ${strategy} benchmark.`,
+          `[Paper] BADGERBOTS_BENCHMARK_COMPLETE preview-${strategy}.json`,
+        ].slice(-80),
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    recoverServer: () => {
+      snapshot = {
+        ...snapshot,
+        server: {
+          ...snapshot.server,
+          lifecycle: "stopped",
+          activeCamp: false,
+          sleepInhibition: "inactive",
+          recoveryRequired: false,
+        },
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    createWorldBackup: () => {
+      snapshot = previewBackup(snapshot, "manual-backup");
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    restoreWorldBackup: (backupId) => {
+      if (!snapshot.backup.snapshots.some((backup) => backup.backupId === backupId))
+        return Promise.reject(new Error("The selected backup no longer exists."));
+      snapshot = {
+        ...snapshot,
+        backup: { ...snapshot.backup, lastAction: "restored-selected" },
+      };
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    resetSheepCityWorld: () => {
+      snapshot = previewBackup(snapshot, "sheep-city-reset-pending");
+      return Promise.resolve(structuredClone(snapshot));
+    },
+    completeStep: (stepId, detail) => {
+      snapshot = completeSetupStep(snapshot, stepId, detail);
       return Promise.resolve(structuredClone(snapshot));
     },
     resetPreview: () => {
@@ -44,7 +292,71 @@ export function createHostGateway(): HostGateway {
 
 const nativeGateway: HostGateway = {
   load: () => invoke<HostSnapshot>("host_snapshot"),
+  onboarding: () => invoke<HostOnboardingView>("host_onboarding_status"),
+  configureService: (serviceUrl, publishableKey) =>
+    invoke<HostOnboardingView>("configure_classroom_service", { serviceUrl, publishableKey }),
+  clearServiceConfiguration: () => invoke<HostOnboardingView>("clear_classroom_service"),
+  signIn: (email, password) => invoke<SignInResult>("sign_in_instructor", { email, password }),
+  pairHost: (organizationId, locationId, displayName) =>
+    invoke<HostOnboardingView>("pair_classroom_host", {
+      organizationId,
+      locationId,
+      displayName,
+    }),
+  signOut: () => invoke<HostOnboardingView>("sign_out_instructor"),
+  probeHardware: () => invoke<HostSnapshot>("probe_host_hardware"),
+  configureServer: (input) =>
+    invoke<HostSnapshot>("configure_minecraft_server", {
+      teacherUsername: input.teacherUsername,
+      serverPort: input.serverPort,
+      maxHeapGib: input.maxHeapGib,
+      eulaAccepted: input.eulaAccepted,
+    }),
+  prepareRuntimeArtifacts: () => invoke<HostSnapshot>("prepare_runtime_artifacts"),
+  repairManagedJava: () => invoke<HostSnapshot>("repair_managed_java"),
+  approveFirewall: () => invoke<HostSnapshot>("approve_minecraft_firewall"),
+  testServer: () => invoke<HostSnapshot>("test_minecraft_server"),
+  startServer: () => invoke<HostSnapshot>("start_minecraft_server"),
+  stopServer: () => invoke<HostSnapshot>("stop_minecraft_server"),
+  runCapacityBenchmark: (strategy) => invoke<HostSnapshot>("run_capacity_benchmark", { strategy }),
+  recoverServer: () => invoke<HostSnapshot>("recover_minecraft_server"),
+  createWorldBackup: () => invoke<HostSnapshot>("create_world_backup"),
+  restoreWorldBackup: (backupId) => invoke<HostSnapshot>("restore_world_backup", { backupId }),
+  resetSheepCityWorld: () => invoke<HostSnapshot>("reset_sheep_city_world"),
   completeStep: (stepId, detail) => invoke<HostSnapshot>("complete_setup_step", { stepId, detail }),
-  transition: (action) => invoke<HostSnapshot>("transition_server", { action }),
   resetPreview: () => Promise.reject(new Error("Native Host state cannot be reset from the UI.")),
 };
+
+function previewBackup(snapshot: HostSnapshot, lastAction: string): HostSnapshot {
+  const createdAt = `unix-${Math.floor(Date.now() / 1000)}`;
+  const backupId = `world-preview-${Date.now()}`;
+  const reason: WorldBackupSnapshot["reason"] =
+    lastAction === "automatic-before-start"
+      ? "automatic-before-start"
+      : lastAction === "sheep-city-reset-pending"
+        ? "before-sheep-city-reset"
+        : "manual";
+  const backups = [
+    {
+      backupId,
+      createdAt,
+      reason,
+      worldCount: 2,
+      fileCount: 12,
+      totalBytes: 8_192,
+    },
+    ...snapshot.backup.snapshots,
+  ].slice(0, 5);
+  return {
+    ...snapshot,
+    backup: {
+      status: "verified",
+      lastVerifiedAt: createdAt,
+      latestId: backupId,
+      backupCount: backups.length,
+      totalBytes: 8_192,
+      lastAction,
+      snapshots: backups,
+    },
+  };
+}

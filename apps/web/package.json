@@ -5,15 +5,17 @@
   "type": "module",
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "turbo run build --filter=@badgerbots/web^... && next dev --hostname 127.0.0.1",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@badgerbots/block-editor": "workspace:*",
+    "@badgerbots/curriculum-schema": "workspace:*",
     "@badgerbots/java-dsl": "workspace:*",
     "@badgerbots/program-model": "workspace:*",
     "@badgerbots/runtime-protocol": "workspace:*",
+    "@supabase/supabase-js": "2.110.8",
     "next": "16.2.11",
     "react": "19.2.8",
     "react-dom": "19.2.8"

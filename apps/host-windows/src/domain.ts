@@ -10,7 +10,8 @@ export const SETUP_STEP_IDS = [
 
 export type SetupStepId = (typeof SETUP_STEP_IDS)[number];
 export type CheckStatus = "pending" | "ready" | "warning" | "blocked";
-export type ServerLifecycle = "stopped" | "starting" | "running" | "stopping" | "failed";
+export type ServerLifecycle =
+  "stopped" | "starting" | "running" | "stopping" | "maintenance" | "failed";
 
 export interface SetupStep {
   id: SetupStepId;
@@ -36,6 +37,15 @@ export interface ManagedArtifact {
   checksum: string;
 }
 
+export interface RuntimeInstallProgress {
+  phase: "checking" | "downloading" | "verifying" | "installing" | "complete";
+  message: string;
+  downloadedBytes: number;
+  totalBytes?: number;
+  percent?: number;
+  repair: boolean;
+}
+
 export interface DiagnosticEvent {
   id: string;
   timestamp: string;
@@ -43,6 +53,20 @@ export interface DiagnosticEvent {
   code: string;
   message: string;
   correlationId: string;
+}
+
+export interface WorldBackupSnapshot {
+  backupId: string;
+  createdAt: string;
+  reason:
+    | "automatic-before-start"
+    | "manual"
+    | "before-sheep-city-reset"
+    | "recovery-after-interruption"
+    | "legacy";
+  worldCount: number;
+  fileCount: number;
+  totalBytes: number;
 }
 
 export interface HostSnapshot {
@@ -63,13 +87,95 @@ export interface HostSnapshot {
   backup: {
     status: "never" | "verified" | "failed";
     lastVerifiedAt?: string;
+    latestId?: string;
+    backupCount: number;
+    totalBytes: number;
+    lastAction?: string;
+    operation?: string;
+    snapshots: WorldBackupSnapshot[];
   };
   update: {
     status: "not_checked" | "current" | "available" | "blocked";
     channel: "internal";
   };
+  cloudConnection: {
+    status: "stopped" | "connecting" | "online" | "offline";
+    detail: string;
+    lastSuccessfulPoll?: string;
+    lastCommandId?: string;
+    lastCommandStatus?: string;
+  };
   pendingOutboundMessages: number;
   diagnostics: DiagnosticEvent[];
+  serverLogs: string[];
+}
+
+export interface HostOnboardingView {
+  serviceConfigured: boolean;
+  signedIn: boolean;
+  paired: boolean;
+  serviceUrl?: string;
+  instructorEmail?: string;
+  organizationName?: string;
+  locationName?: string;
+  hostId?: string;
+  hostDisplayName?: string;
+  credentialProtection: string;
+}
+
+export interface InstructorProfile {
+  memberships: { organizationId: string; role: "owner" | "assistant" }[];
+  organizations: { id: string; name: string }[];
+  locations: { id: string; organizationId: string; name: string }[];
+}
+
+export interface SignInResult {
+  onboarding: HostOnboardingView;
+  profile: InstructorProfile;
+}
+
+export interface ServerConfigurationInput {
+  teacherUsername: string;
+  serverPort: number;
+  maxHeapGib: number;
+  eulaAccepted: boolean;
+}
+
+export function validateServerConfiguration(input: ServerConfigurationInput): string[] {
+  const errors: string[] = [];
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(input.teacherUsername.trim()))
+    errors.push("Enter the teacher’s exact 3–16 character Minecraft Java username.");
+  if (!Number.isInteger(input.serverPort) || input.serverPort < 1024 || input.serverPort > 65535)
+    errors.push("Choose a Minecraft port between 1024 and 65535.");
+  if (![2, 4, 6, 8].includes(input.maxHeapGib))
+    errors.push("Choose a server memory limit of 2, 4, 6, or 8 GiB.");
+  if (!input.eulaAccepted)
+    errors.push("Read and accept the Minecraft EULA before preparing the server.");
+  return errors;
+}
+
+export function validateHostServiceInput(input: {
+  serviceUrl: string;
+  publishableKey: string;
+}): string[] {
+  const errors: string[] = [];
+  try {
+    const url = new URL(input.serviceUrl.trim());
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".supabase.co") ||
+      url.port ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      errors.push("Use the bare HTTPS Supabase Project URL.");
+  } catch {
+    errors.push("Enter a valid HTTPS classroom service URL.");
+  }
+  if (!input.publishableKey.startsWith("sb_publishable_") || input.publishableKey.length < 24)
+    errors.push("Use the browser-safe Supabase Publishable key.");
+  return errors;
 }
 
 const setupLabels: Record<SetupStepId, string> = {
@@ -121,7 +227,7 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
     artifacts: [
       {
         id: "java",
-        label: "Managed Java 21",
+        label: "Verified Java 21",
         status: "missing",
         version: "pending",
         checksum: "pending",
@@ -148,12 +254,17 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
       lastExit: "unknown",
       recoveryRequired: false,
     },
-    backup: { status: "never" },
+    backup: { status: "never", backupCount: 0, totalBytes: 0, snapshots: [] },
     update: { status: "not_checked", channel: "internal" },
+    cloudConnection: {
+      status: "stopped",
+      detail: "Starts automatically with the classroom server.",
+    },
     pendingOutboundMessages: 0,
     diagnostics: [
       diagnostic("HOST_PREVIEW_READY", "Host safety model loaded. Paper controls remain locked."),
     ],
+    serverLogs: [],
   };
 }
 
@@ -198,7 +309,6 @@ export function canStartServer(snapshot: HostSnapshot): { allowed: boolean; reas
     reasons.push("Readiness checks are incomplete or blocked.");
   if (snapshot.artifacts.some((artifact) => artifact.status !== "verified"))
     reasons.push("Managed Java, Paper, and plugin artifacts are not verified.");
-  if (snapshot.backup.status !== "verified") reasons.push("No verified recovery backup exists.");
   if (snapshot.server.recoveryRequired) reasons.push("Crash recovery must finish before restart.");
   return { allowed: reasons.length === 0, reasons };
 }
@@ -259,6 +369,12 @@ export function sanitizeDiagnosticText(value: string): string {
     .replace(/\b(?:token|password|secret|authorization)\s*[:=]\s*\S+/gi, "[redacted-secret]")
     .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted-credential]")
     .slice(0, 500);
+}
+
+export function hostErrorMessage(reason: unknown, fallback: string): string {
+  if (reason instanceof Error && reason.message.trim()) return reason.message.trim();
+  if (typeof reason === "string" && reason.trim()) return reason.trim();
+  return fallback;
 }
 
 function diagnostic(

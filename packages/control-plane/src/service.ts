@@ -20,8 +20,13 @@ import type { MemoryControlPlaneStore } from "./memory-store.js";
 import type {
   CampSession,
   Clock,
+  HelpRequest,
+  HelpRequestState,
   IdGenerator,
   InstructorAuthAdmin,
+  InstructorRosterEntry,
+  ProgressRecord,
+  ProgressState,
   ProgramVersion,
   SecretHasher,
   Workspace,
@@ -50,7 +55,8 @@ export class SystemClock implements Clock {
 
 export class RandomIdGenerator implements IdGenerator {
   next(kind: string): string {
-    return `${kind}_${randomUUID()}`;
+    void kind;
+    return randomUUID();
   }
 }
 
@@ -482,6 +488,173 @@ export class ControlPlaneService {
     return { kind: "saved", version: structuredClone(version) };
   }
 
+  requestHelp(input: {
+    actor: Extract<ActorCredentials, { kind: "camper" }>;
+    summary?: string;
+    correlationId: string;
+  }): HelpRequest {
+    const camper = this.requireAuthorizedCamper(input.actor);
+    const session = this.requireSession(camper.sessionId);
+    this.requireActiveSession(session);
+    const summary = input.summary?.trim();
+    if (summary !== undefined && summary.length > 240)
+      throw new ControlPlaneError(
+        "invalid_input",
+        "Keep the help request summary to 240 characters or fewer.",
+      );
+    const existing = this.store.state.helpRequests.find(
+      (request) => request.camperId === camper.id && request.state !== "resolved",
+    );
+    if (existing) return structuredClone(existing);
+    const request: HelpRequest = {
+      id: this.ids.next("help"),
+      sessionId: session.id,
+      camperId: camper.id,
+      state: "open",
+      ...(summary ? { summary } : {}),
+      createdAt: this.clock.now().toISOString(),
+    };
+    this.store.state.helpRequests.push(request);
+    this.audit(
+      session.organizationId,
+      session.id,
+      "camper",
+      camper.id,
+      "help.request",
+      request.id,
+      input.correlationId,
+    );
+    this.hint(session, "help", request.id);
+    return structuredClone(request);
+  }
+
+  updateHelpRequest(input: {
+    actorInstructorId: InstructorId;
+    helpRequestId: string;
+    state: Exclude<HelpRequestState, "open">;
+    correlationId: string;
+  }): HelpRequest {
+    const request = this.store.state.helpRequests.find(
+      (candidate) => candidate.id === input.helpRequestId,
+    );
+    if (!request) throw new ControlPlaneError("not_found", "Help request was not found.");
+    const session = this.requireSession(request.sessionId);
+    this.requireSessionInstructor(session, input.actorInstructorId, false);
+    this.requireActiveSession(session);
+    request.state = input.state;
+    request.acknowledgedByInstructorId = input.actorInstructorId;
+    if (input.state === "resolved") request.resolvedAt = this.clock.now().toISOString();
+    else delete request.resolvedAt;
+    this.audit(
+      session.organizationId,
+      session.id,
+      "instructor",
+      input.actorInstructorId,
+      `help.${input.state}`,
+      request.id,
+      input.correlationId,
+    );
+    this.hint(session, "help", request.id);
+    return structuredClone(request);
+  }
+
+  setProgress(input: {
+    actorInstructorId: InstructorId;
+    sessionId: SessionId;
+    camperId: CamperId;
+    projectKey: "sheep-city";
+    benchmarkKey: string;
+    state: ProgressState;
+    evidence?: Record<string, string | number | boolean>;
+    correlationId: string;
+  }): ProgressRecord {
+    const session = this.requireSession(input.sessionId);
+    this.requireSessionInstructor(session, input.actorInstructorId, false);
+    this.requireActiveSession(session);
+    const camper = this.store.state.campers.find(
+      (candidate) => candidate.id === input.camperId && candidate.sessionId === session.id,
+    );
+    if (!camper) throw new ControlPlaneError("not_found", "Camper was not found in this session.");
+    const benchmarkKey = input.benchmarkKey.trim();
+    if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(benchmarkKey))
+      throw new ControlPlaneError(
+        "invalid_input",
+        "Progress benchmark keys must use 2-64 lowercase letters, numbers, or dashes.",
+      );
+    let record = this.store.state.progressRecords.find(
+      (candidate) =>
+        candidate.sessionId === session.id &&
+        candidate.camperId === camper.id &&
+        candidate.projectKey === input.projectKey &&
+        candidate.benchmarkKey === benchmarkKey,
+    );
+    const values = {
+      state: input.state,
+      evidence: structuredClone(input.evidence ?? {}),
+      decidedByInstructorId: input.actorInstructorId,
+      observedAt: this.clock.now().toISOString(),
+    };
+    if (record) Object.assign(record, values);
+    else {
+      record = {
+        id: this.ids.next("progress"),
+        sessionId: session.id,
+        camperId: camper.id,
+        projectKey: input.projectKey,
+        benchmarkKey,
+        ...values,
+      };
+      this.store.state.progressRecords.push(record);
+    }
+    this.audit(
+      session.organizationId,
+      session.id,
+      "instructor",
+      input.actorInstructorId,
+      "progress.set",
+      record.id,
+      input.correlationId,
+    );
+    this.hint(session, "progress", record.id);
+    return structuredClone(record);
+  }
+
+  getInstructorRoster(input: {
+    actorInstructorId: InstructorId;
+    sessionId: SessionId;
+  }): InstructorRosterEntry[] {
+    const session = this.requireSession(input.sessionId);
+    this.requireSessionInstructor(session, input.actorInstructorId, false);
+    return this.store.state.campers
+      .filter((camper) => camper.sessionId === session.id)
+      .map((camper) => {
+        const workspace = this.store.state.workspaces.find(
+          (candidate) => candidate.sessionId === session.id && candidate.camperId === camper.id,
+        );
+        if (!workspace) throw new ControlPlaneError("not_found", "Camper workspace was not found.");
+        const progress = this.store.state.progressRecords
+          .filter(
+            (candidate) =>
+              candidate.sessionId === session.id &&
+              candidate.camperId === camper.id &&
+              candidate.projectKey === workspace.projectId,
+          )
+          .at(-1);
+        const help = this.store.state.helpRequests
+          .filter((candidate) => candidate.camperId === camper.id)
+          .at(-1);
+        return {
+          camperId: camper.id,
+          displayName: `${camper.firstName} ${camper.lastInitial}.`,
+          workspaceId: workspace.id,
+          workspaceRevision: workspace.revision,
+          projectId: workspace.projectId,
+          progressState: progress?.state ?? "not_started",
+          ...(help && help.state !== "resolved" ? { helpState: help.state } : {}),
+        };
+      });
+  }
+
   advanceRetention(correlationId: string): SessionId[] {
     const changed: SessionId[] = [];
     for (const session of this.store.state.sessions) {
@@ -531,6 +704,12 @@ export class ControlPlaneService {
     this.store.state.versions = this.store.state.versions.filter(
       (version) => !workspaceIds.has(version.workspaceId),
     );
+    this.store.state.progressRecords = this.store.state.progressRecords.filter(
+      (record) => record.sessionId !== session.id,
+    );
+    this.store.state.helpRequests = this.store.state.helpRequests.filter(
+      (request) => request.sessionId !== session.id,
+    );
     this.store.state.workspaces = this.store.state.workspaces.filter(
       (workspace) => workspace.sessionId !== session.id,
     );
@@ -577,12 +756,7 @@ export class ControlPlaneService {
     workspace: Workspace,
     session: CampSession,
   ): ProgramAuthor {
-    this.refreshRetention(session);
-    if (session.retentionState !== "active" || dateOnly(this.clock.now()) > session.endsOn)
-      throw new ControlPlaneError(
-        "session_expired",
-        "This session no longer accepts program changes.",
-      );
+    this.requireActiveSession(session);
     if (actor.kind === "instructor") {
       this.requireSessionInstructor(session, actor.instructorId, false);
       return { kind: "instructor", instructorId: actor.instructorId };
@@ -597,6 +771,26 @@ export class ControlPlaneService {
     )
       throw new ControlPlaneError("forbidden", "Camper workspace authorization was rejected.");
     return { kind: "camper", camperId: camper.id };
+  }
+
+  private requireAuthorizedCamper(actor: Extract<ActorCredentials, { kind: "camper" }>) {
+    const camper = this.store.state.campers.find((candidate) => candidate.id === actor.camperId);
+    if (
+      !camper ||
+      !this.secretsMatch(camper.accessTokenDigest, this.hasher.digest(actor.accessToken))
+    )
+      throw new ControlPlaneError("forbidden", "Camper authorization was rejected.");
+    return camper;
+  }
+
+  private requireActiveSession(session: CampSession): void {
+    this.refreshRetention(session);
+    const today = dateOnly(this.clock.now());
+    if (session.retentionState !== "active" || today < session.startsOn || today > session.endsOn)
+      throw new ControlPlaneError(
+        "session_expired",
+        "This session no longer accepts classroom changes.",
+      );
   }
 
   private writeVersion(
@@ -689,7 +883,11 @@ export class ControlPlaneService {
     });
   }
 
-  private hint(session: CampSession, topic: "roster" | "program" | "retention", entityId: string) {
+  private hint(
+    session: CampSession,
+    topic: "roster" | "program" | "progress" | "help" | "runtime" | "retention",
+    entityId: string,
+  ) {
     this.store.state.realtimeHints.push({
       protocolVersion: 1,
       sequence: ++this.sequence,

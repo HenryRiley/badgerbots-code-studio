@@ -60,6 +60,10 @@ public final class AtomicProgramRuntime {
     active.clear();
   }
 
+  public synchronized int activeProgramCount() {
+    return active.size();
+  }
+
   public synchronized int execute(ScopeKey address, GameAdapter.EventContext event) {
     ActiveProgram current = active.get(address.activeProgramKey());
     if (current == null || !scopes.isActive(current.scope())) {

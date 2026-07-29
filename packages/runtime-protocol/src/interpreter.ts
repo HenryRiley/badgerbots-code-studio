@@ -20,6 +20,11 @@ interface ScopeState {
   resources: Set<ScopedResource>;
 }
 
+export interface ScopeStopResult {
+  cancelledResources: number;
+  cancellationFailures: number;
+}
+
 function scopeKey(key: ExecutionScopeKey): string {
   return [
     key.organizationId,
@@ -50,18 +55,56 @@ export class ExecutionScopeRegistry {
     state.resources.add(resource);
   }
 
-  stop(key: ExecutionScopeKey): void {
+  stop(key: ExecutionScopeKey): ScopeStopResult {
     const id = scopeKey(key);
     const state = this.scopes.get(id);
-    if (!state) return;
+    if (!state) return { cancelledResources: 0, cancellationFailures: 0 };
     state.stopped = true;
-    for (const resource of [...state.resources].reverse()) resource.cancel();
+    let cancelledResources = 0;
+    let cancellationFailures = 0;
+    for (const resource of [...state.resources].reverse()) {
+      try {
+        resource.cancel();
+        cancelledResources += 1;
+      } catch {
+        cancellationFailures += 1;
+      }
+    }
     state.resources.clear();
     this.scopes.delete(id);
+    return { cancelledResources, cancellationFailures };
   }
 
   isActive(key: ExecutionScopeKey): boolean {
     return this.scopes.has(scopeKey(key));
+  }
+
+  activeScopeCount(): number {
+    return this.scopes.size;
+  }
+
+  registeredResourceCount(): number {
+    return [...this.scopes.values()].reduce((total, state) => total + state.resources.size, 0);
+  }
+
+  stopAll(): ScopeStopResult {
+    const result: ScopeStopResult = { cancelledResources: 0, cancellationFailures: 0 };
+    for (const key of [...this.scopes.keys()]) {
+      const state = this.scopes.get(key);
+      if (!state) continue;
+      state.stopped = true;
+      for (const resource of [...state.resources].reverse()) {
+        try {
+          resource.cancel();
+          result.cancelledResources += 1;
+        } catch {
+          result.cancellationFailures += 1;
+        }
+      }
+      state.resources.clear();
+      this.scopes.delete(key);
+    }
+    return result;
   }
 }
 
@@ -197,12 +240,22 @@ export class AtomicProgramRuntime {
     }
   }
 
-  stop(scope: RuntimeScopeAddress): void {
+  stop(scope: RuntimeScopeAddress): ScopeStopResult {
     const key = activeKey(scope);
     const active = this.active.get(key);
-    if (!active) return;
-    this.scopes.stop(active.scope);
+    if (!active) return { cancelledResources: 0, cancellationFailures: 0 };
+    const result = this.scopes.stop(active.scope);
     this.active.delete(key);
+    return result;
+  }
+
+  stopAll(): ScopeStopResult {
+    this.active.clear();
+    return this.scopes.stopAll();
+  }
+
+  activeProgramCount(): number {
+    return this.active.size;
   }
 
   execute(scope: RuntimeScopeAddress, event: RuntimeEventContext): { instructions: number } {

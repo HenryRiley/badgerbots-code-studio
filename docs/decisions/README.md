@@ -2,18 +2,27 @@
 
 Decisions are immutable records. Supersede an accepted decision with a new ADR instead of rewriting its outcome. A `proposed` status means implementation must not treat the choice as release-ready.
 
-| ADR                                                   | Status     | Decision                                                 |
-| ----------------------------------------------------- | ---------- | -------------------------------------------------------- |
-| [0001](0001-locked-product-decisions.md)              | Accepted   | Locked product decisions                                 |
-| [0002](0002-monorepo-and-toolchains.md)               | Accepted   | Monorepo, build tooling, and pinned toolchains           |
-| [0003](0003-control-plane-and-providers.md)           | Superseded | Rejected paid control-plane provider baseline            |
-| [0004](0004-instructor-authentication.md)             | Superseded | Replaced application-managed instructor authentication   |
-| [0005](0005-realtime-protocol.md)                     | Accepted   | Outbound WebSocket realtime topology                     |
-| [0006](0006-tauri-windows-packaging.md)               | Accepted   | Tauri 2 Windows packaging strategy                       |
-| [0007](0007-minecraft-paper-client-toolchain.md)      | Proposed   | Minecraft, Paper, Java, and client-mod version spike     |
-| [0008](0008-world-strategy-experiment.md)             | Accepted   | World strategy experiment and abstraction boundary       |
-| [0009](0009-zero-cost-pilot-platform.md)              | Accepted   | Zero-cost pilot hosting, data, auth, realtime, and email |
-| [0010](0010-control-plane-security-boundaries.md)     | Accepted   | Control-plane security and provider boundaries           |
-| [0011](0011-runtime-protocol-and-execution-scopes.md) | Accepted   | Authenticated runtime protocol and execution scopes      |
+| ADR                                                                | Status     | Decision                                                 |
+| ------------------------------------------------------------------ | ---------- | -------------------------------------------------------- |
+| [0001](0001-locked-product-decisions.md)                           | Accepted   | Locked product decisions                                 |
+| [0002](0002-monorepo-and-toolchains.md)                            | Accepted   | Monorepo, build tooling, and pinned toolchains           |
+| [0003](0003-control-plane-and-providers.md)                        | Superseded | Rejected paid control-plane provider baseline            |
+| [0004](0004-instructor-authentication.md)                          | Superseded | Replaced application-managed instructor authentication   |
+| [0005](0005-realtime-protocol.md)                                  | Accepted   | Outbound WebSocket realtime topology                     |
+| [0006](0006-tauri-windows-packaging.md)                            | Accepted   | Tauri 2 Windows packaging strategy                       |
+| [0007](0007-minecraft-paper-client-toolchain.md)                   | Proposed   | Minecraft, Paper, Java, and client-mod version spike     |
+| [0008](0008-world-strategy-experiment.md)                          | Accepted   | World strategy experiment and abstraction boundary       |
+| [0009](0009-zero-cost-pilot-platform.md)                           | Accepted   | Zero-cost pilot hosting, data, auth, realtime, and email |
+| [0010](0010-control-plane-security-boundaries.md)                  | Accepted   | Control-plane security and provider boundaries           |
+| [0011](0011-runtime-protocol-and-execution-scopes.md)              | Accepted   | Authenticated runtime protocol and execution scopes      |
+| [0012](0012-connected-classroom-identity-and-edge-api.md)          | Accepted   | Connected classroom identity, Realtime, and Edge API     |
+| [0013](0013-native-host-onboarding-and-credential-storage.md)      | Accepted   | Native Host onboarding and Windows credential storage    |
+| [0014](0014-managed-runtime-directory-and-server-configuration.md) | Accepted   | Managed private Minecraft runtime configuration          |
+| [0015](0015-host-artifact-and-firewall-boundary.md)                | Accepted   | Verified Host artifacts and private-network firewall     |
+| [0016](0016-host-paper-smoke-test-lifecycle.md)                    | Accepted   | Bounded graphical Paper readiness smoke test             |
+| [0017](0017-host-managed-paper-lifecycle.md)                       | Accepted   | Managed Paper lifecycle and realtime in-app console      |
+| [0018](0018-host-world-backup-restore-and-reset.md)                | Accepted   | Verified world backup, restore, and Sheep City reset     |
+| [0019](0019-non-destructive-working-world-initialization.md)       | Accepted   | Preserve working worlds across Paper startup             |
+| [0020](0020-private-managed-temurin-java-21.md)                    | Accepted   | Private pinned Temurin Java install and repair           |
 
 The zero-cost provider decision is accepted for the one-camp pilot only and remains gated by capacity, recovery, privacy, and pre-camp readiness tests. The Minecraft decision remains proposed until its compatibility spike passes.

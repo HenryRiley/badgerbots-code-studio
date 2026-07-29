@@ -2,6 +2,7 @@ node_modules/
 .turbo/
 .next/
 dist/
+build/
 out/
 *.tsbuildinfo
 target/
@@ -15,6 +16,7 @@ coverage/
 .DS_Store
 Thumbs.db
 work/
+apps/host-windows/src-tauri/bundled/*.jar
 worlds/local/
 worlds/backups/
 curriculum/source-material/*.pdf
@@ -26,3 +28,4 @@ installers/artifacts/
 *.iml
 .env.local
 .pnpm-store/
+.gradle/
