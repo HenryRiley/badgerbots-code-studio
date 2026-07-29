@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import type { Program } from "@badgerbots/program-model";
 import {
@@ -8,8 +9,6 @@ import {
   callClassroomApi,
   classroomClient,
   classroomConfigured,
-  loadClassroomBinding,
-  localRunnableProgram,
   sendCamperHeartbeat,
   subscribeToClassroom,
   unbindWorkspace,
@@ -87,6 +86,7 @@ interface StudentState {
 type AppMode = "loading" | "landing" | "instructor" | "student";
 
 export function ClassroomApp() {
+  const router = useRouter();
   const [mode, setMode] = useState<AppMode>("loading");
   const [profile, setProfile] = useState<Profile>();
   const [sessions, setSessions] = useState<CampSession[]>([]);
@@ -138,8 +138,19 @@ export function ClassroomApp() {
     }
     setStudent(next);
     setMode("student");
-    setMessage("Student workspace recovered.");
-  }, []);
+    bindWorkspace(
+      {
+        version: 2,
+        workspaceId: next.workspaceId,
+        sessionId: next.sessionId,
+        revision: next.revision,
+        role: "camper",
+      },
+      next.program,
+    );
+    setMessage("Student workspace recovered. Opening the editor…");
+    router.replace("/editor");
+  }, [router]);
 
   useEffect(() => {
     if (!classroomConfigured()) {
@@ -256,9 +267,11 @@ export function ClassroomApp() {
           <h1>Connected Classroom</h1>
         </div>
         <div className="button-row">
-          <Link className="secondary-button" href="/editor">
-            Block editor
-          </Link>
+          {mode === "instructor" ? (
+            <Link className="secondary-button" href="/editor">
+              Block editor
+            </Link>
+          ) : null}
           {mode === "instructor" || mode === "student" ? (
             <button className="secondary-button" type="button" onClick={() => void signOut()}>
               Sign out
@@ -281,6 +294,7 @@ export function ClassroomApp() {
           onStudent={(next) => {
             setStudent(next);
             setMode("student");
+            router.push("/editor");
           }}
         />
       ) : null}
@@ -298,12 +312,11 @@ export function ClassroomApp() {
         />
       ) : null}
       {mode === "student" && student ? (
-        <StudentWorkspace
-          busy={busy}
-          student={student}
-          perform={perform}
-          refresh={refreshStudent}
-        />
+        <section className="classroom-card student-workspace">
+          <p className="eyebrow">Opening Sheep City</p>
+          <h2>{student.displayName}</h2>
+          <p>Your code, block library, Run button, and classroom controls open together.</p>
+        </section>
       ) : null}
     </main>
   );
@@ -380,8 +393,9 @@ function Landing(props: {
       localStorage.setItem("badgerbots:classroom:student:v1", JSON.stringify(student));
       bindWorkspace(
         {
-          version: 1,
+          version: 2,
           workspaceId: student.workspaceId,
+          sessionId: student.sessionId,
           revision: student.revision,
           role: "camper",
         },
@@ -518,7 +532,17 @@ function InstructorDashboard(props: {
       props.onSessions(sessions.sessions);
       props.setSelectedSessionId(result.sessionId);
       setJoinCode(result.joinCode);
-      return "Weekly session created. Copy the class code now; it is shown only here.";
+      return "Weekly session created. Its class code remains available from this dashboard.";
+    });
+
+  const showJoinCode = () =>
+    props.perform(async () => {
+      if (!props.selectedSessionId) throw new Error("Choose a session first.");
+      const result = await callClassroomApi<{ joinCode: string }>("session_join_code", {
+        sessionId: props.selectedSessionId,
+      });
+      setJoinCode(result.joinCode);
+      return "Class code ready to copy.";
     });
 
   const pairHost = () =>
@@ -552,43 +576,15 @@ function InstructorDashboard(props: {
     if (!selectedWorkspace) return;
     bindWorkspace(
       {
-        version: 1,
+        version: 2,
         workspaceId: selectedWorkspace.id,
+        sessionId: props.selectedSessionId,
         revision: Number(selectedWorkspace.revision),
         role: "instructor",
       },
       selectedWorkspace.canonical_program,
     );
   };
-
-  const pushWorkspace = () =>
-    props.perform(async () => {
-      if (!selectedWorkspace) throw new Error("Choose a student first.");
-      const binding = loadClassroomBinding();
-      if (!binding || binding.workspaceId !== selectedWorkspace.id) {
-        throw new Error(
-          "Open this student's blocks first. This prevents pushing another student's local draft.",
-        );
-      }
-      const result = await callClassroomApi<{
-        result:
-          | { kind: "saved"; revision: number }
-          | { kind: "revision_conflict"; actual_revision: number };
-      }>("save_program", {
-        workspaceId: selectedWorkspace.id,
-        baseRevision: Number(selectedWorkspace.revision),
-        clientMutationId: crypto.randomUUID(),
-        program: localRunnableProgram(),
-      });
-      if (result.result.kind === "revision_conflict") {
-        await props.refreshSnapshot();
-        throw new Error(
-          `The student saved revision ${result.result.actual_revision} first. Their latest code is now shown; review before retrying.`,
-        );
-      }
-      await props.refreshSnapshot();
-      return `Instructor revision ${result.result.revision} was pushed to the student.`;
-    });
 
   const queue = (commandKind: "deploy_program" | "stop_program") =>
     props.perform(async () => {
@@ -633,90 +629,89 @@ function InstructorDashboard(props: {
             assistant setup require the organization owner.
           </p>
         ) : null}
-        <fieldset className="owner-controls" disabled={!ownerMembership}>
-          <legend>Owner controls</legend>
-          <label>
-            Location
-            <select value={locationId} onChange={(event) => setLocationId(event.target.value)}>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="date-grid">
-            <label>
-              Starts
-              <input
-                type="date"
-                value={startsOn}
-                onChange={(event) => setStartsOn(event.target.value)}
-              />
-            </label>
-            <label>
-              Ends
-              <input
-                type="date"
-                value={endsOn}
-                onChange={(event) => setEndsOn(event.target.value)}
-              />
-            </label>
-          </div>
-          <button
-            className="primary-button"
-            disabled={props.busy}
-            onClick={() => void createSession()}
-          >
-            Create weekly session
-          </button>
-          {joinCode ? (
-            <div className="one-time-secret">
-              <small>Class code—shown once</small>
-              <strong>{joinCode}</strong>
-            </div>
-          ) : null}
-          <button
-            className="secondary-button"
-            disabled={props.busy}
-            onClick={() => void pairHost()}
-          >
-            Pair teacher Host
-          </button>
-          {hostCredentials ? (
-            <div className="host-credential">
-              <small>Copy now; the token is shown once</small>
-              <code>BADGERBOTS_CLASSROOM_HOST_ID={hostCredentials.hostId}</code>
-              <code>BADGERBOTS_CLASSROOM_HOST_TOKEN={hostCredentials.pairingToken}</code>
-            </div>
-          ) : null}
-          <hr />
-          <p className="eyebrow">Assistant instructor</p>
-          <label>
-            Email
-            <input
-              type="email"
-              value={assistantEmail}
-              onChange={(event) => setAssistantEmail(event.target.value)}
-            />
-          </label>
-          <label>
-            Temporary password
-            <input
-              type="password"
-              minLength={12}
-              value={assistantPassword}
-              onChange={(event) => setAssistantPassword(event.target.value)}
-            />
-          </label>
-          <button
-            className="secondary-button"
-            disabled={props.busy}
-            onClick={() => void provisionAssistant()}
-          >
-            Create and assign assistant
-          </button>
-        </fieldset>
+        {ownerMembership ? (
+          <details className="setup-disclosure">
+            <summary>Camp and staff setup</summary>
+            <fieldset className="owner-controls">
+              <legend>New weekly session</legend>
+              <label>
+                Location
+                <select value={locationId} onChange={(event) => setLocationId(event.target.value)}>
+                  {locations.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="date-grid">
+                <label>
+                  Starts
+                  <input
+                    type="date"
+                    value={startsOn}
+                    onChange={(event) => setStartsOn(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Ends
+                  <input
+                    type="date"
+                    value={endsOn}
+                    onChange={(event) => setEndsOn(event.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                className="primary-button"
+                disabled={props.busy}
+                onClick={() => void createSession()}
+              >
+                Create weekly session
+              </button>
+              <button
+                className="secondary-button"
+                disabled={props.busy}
+                onClick={() => void pairHost()}
+              >
+                Pair teacher Host
+              </button>
+              {hostCredentials ? (
+                <div className="host-credential">
+                  <small>Copy now; the token is shown once</small>
+                  <code>BADGERBOTS_CLASSROOM_HOST_ID={hostCredentials.hostId}</code>
+                  <code>BADGERBOTS_CLASSROOM_HOST_TOKEN={hostCredentials.pairingToken}</code>
+                </div>
+              ) : null}
+              <hr />
+              <p className="eyebrow">Assistant instructor</p>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={assistantEmail}
+                  onChange={(event) => setAssistantEmail(event.target.value)}
+                />
+              </label>
+              <label>
+                Temporary password
+                <input
+                  type="password"
+                  minLength={12}
+                  value={assistantPassword}
+                  onChange={(event) => setAssistantPassword(event.target.value)}
+                />
+              </label>
+              <button
+                className="secondary-button"
+                disabled={props.busy}
+                onClick={() => void provisionAssistant()}
+              >
+                Create and assign assistant
+              </button>
+            </fieldset>
+          </details>
+        ) : null}
       </aside>
 
       <section className="classroom-card">
@@ -730,6 +725,7 @@ function InstructorDashboard(props: {
             onChange={(event) => {
               props.setSelectedSessionId(event.target.value);
               setSelectedWorkspaceId("");
+              setJoinCode("");
             }}
           >
             <option value="">Choose a session</option>
@@ -740,6 +736,22 @@ function InstructorDashboard(props: {
             ))}
           </select>
         </div>
+        {props.selectedSessionId ? (
+          <div className="class-code-panel">
+            <div>
+              <small>Class code</small>
+              <strong>{joinCode || "••••••••"}</strong>
+              <span>Available throughout the session</span>
+            </div>
+            <button
+              className="secondary-button"
+              disabled={props.busy}
+              onClick={() => void showJoinCode()}
+            >
+              {joinCode ? "Show again" : "Show class code"}
+            </button>
+          </div>
+        ) : null}
         {!props.snapshot ? <p>Create or select a session to see students.</p> : null}
         <div className="roster-list">
           {props.snapshot?.campers.map((camper) => {
@@ -813,12 +825,9 @@ function InstructorDashboard(props: {
               </button>
             </div>
             <div className="button-row">
-              <Link className="secondary-button" href="/editor" onClick={openWorkspace}>
-                Edit selected blocks
+              <Link className="primary-button" href="/editor" onClick={openWorkspace}>
+                Edit live code
               </Link>
-              <button className="secondary-button" onClick={() => void pushWorkspace()}>
-                Push my local blocks
-              </button>
               <button className="primary-button" onClick={() => void queue("deploy_program")}>
                 Run
               </button>
@@ -885,128 +894,6 @@ function InstructorDashboard(props: {
         })}
       </section>
     </div>
-  );
-}
-
-function StudentWorkspace(props: {
-  busy: boolean;
-  student: StudentState;
-  perform(work: () => Promise<string>): Promise<void>;
-  refresh(): Promise<void>;
-}) {
-  const syncLocal = () =>
-    props.perform(async () => {
-      const binding = loadClassroomBinding();
-      if (!binding || binding.workspaceId !== props.student.workspaceId) {
-        throw new Error("Open your blocks first so the correct local workspace is selected.");
-      }
-      const result = await callClassroomApi<{
-        result:
-          | { kind: "saved"; revision: number }
-          | { kind: "revision_conflict"; actual_revision: number };
-      }>("save_program", {
-        workspaceId: props.student.workspaceId,
-        baseRevision: props.student.revision,
-        clientMutationId: crypto.randomUUID(),
-        program: localRunnableProgram(),
-      });
-      if (result.result.kind === "revision_conflict") {
-        await props.refresh();
-        throw new Error(
-          `Someone saved revision ${result.result.actual_revision} first. Review the updated blocks before saving again.`,
-        );
-      }
-      await props.refresh();
-      return `Cloud autosave accepted revision ${result.result.revision}.`;
-    });
-
-  const queue = (commandKind: "deploy_program" | "stop_program") =>
-    props.perform(async () => {
-      const result = await callClassroomApi<{ commandId: string; status: string }>(
-        "queue_runtime",
-        {
-          workspaceId: props.student.workspaceId,
-          commandKind,
-        },
-      );
-      return `${commandKind === "deploy_program" ? "Run" : "Stop"} command ${result.commandId} is ${result.status}.`;
-    });
-
-  const requestHelp = () =>
-    props.perform(async () => {
-      await callClassroomApi("request_help", {
-        summary: "I need help with my Sheep City program.",
-      });
-      return "Your instructor can now see your help request.";
-    });
-
-  return (
-    <section className="classroom-card student-workspace">
-      <p className="eyebrow">Student workspace</p>
-      <h2>{props.student.displayName}</h2>
-      <div className="student-status-grid">
-        <div>
-          <small>Cloud revision</small>
-          <strong>{props.student.revision}</strong>
-        </div>
-        <div>
-          <small>Minecraft runtime</small>
-          <strong>{props.student.activeRuntimeVersionId ? "Running" : "Stopped"}</strong>
-        </div>
-        <div>
-          <small>Project</small>
-          <strong>Sheep City</strong>
-        </div>
-      </div>
-      <p>
-        Load the cloud revision into the block editor. Valid block changes save locally immediately
-        and can be synchronized here; the editor also performs a debounced cloud save while this
-        workspace remains bound.
-      </p>
-      <div className="button-row">
-        <Link
-          className="primary-button"
-          href="/editor"
-          onClick={() =>
-            bindWorkspace(
-              {
-                version: 1,
-                workspaceId: props.student.workspaceId,
-                revision: props.student.revision,
-                role: "camper",
-              },
-              props.student.program,
-            )
-          }
-        >
-          Open my blocks
-        </Link>
-        <button className="secondary-button" disabled={props.busy} onClick={() => void syncLocal()}>
-          Sync local blocks
-        </button>
-        <button
-          className="primary-button"
-          disabled={props.busy}
-          onClick={() => void queue("deploy_program")}
-        >
-          Run
-        </button>
-        <button
-          className="danger-button"
-          disabled={props.busy}
-          onClick={() => void queue("stop_program")}
-        >
-          Stop
-        </button>
-        <button
-          className="secondary-button"
-          disabled={props.busy}
-          onClick={() => void requestHelp()}
-        >
-          Ask for help
-        </button>
-      </div>
-    </section>
   );
 }
 

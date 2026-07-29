@@ -27,7 +27,18 @@ import {
   saveLocalEditorState,
   type LocalEditorState,
 } from "./local-editor-storage";
-import { autosaveBoundProgram } from "./classroom/classroom-api";
+import {
+  acceptBoundWorkspaceProgram,
+  autosaveBoundProgram,
+  callClassroomApi,
+  classroomClient,
+  loadBoundWorkspaceState,
+  loadClassroomBinding,
+  subscribeToClassroom,
+  unbindWorkspace,
+  type BoundWorkspaceState,
+  type ClassroomBinding,
+} from "./classroom/classroom-api";
 
 interface ConsoleEntry {
   id: number;
@@ -54,6 +65,11 @@ export function CompilerHarness() {
   });
   const [workspaceSyncVersion, setWorkspaceSyncVersion] = useState(0);
   const [editorLoaded, setEditorLoaded] = useState(false);
+  const [classroomBinding, setClassroomBinding] = useState<ClassroomBinding>();
+  const [cloudState, setCloudState] = useState<BoundWorkspaceState>();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [classroomBusy, setClassroomBusy] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string>();
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
     {
       id: 1,
@@ -111,6 +127,7 @@ export function CompilerHarness() {
 
   useEffect(() => {
     const restored = loadLocalEditorState(localStorage);
+    setClassroomBinding(loadClassroomBinding());
     if (restored.kind === "loaded") {
       editorStateRef.current = restored.state;
       programRef.current = restored.state.program;
@@ -148,11 +165,13 @@ export function CompilerHarness() {
       void autosaveBoundProgram(program)
         .then((result) => {
           if (result.kind === "saved") {
+            setClassroomBinding(loadClassroomBinding());
             setSaveStatus({
               kind: "saved",
               message: `Local save acknowledged; cloud revision ${result.revision} synced`,
             });
             writeConsole("success", `Cloud autosave accepted revision ${result.revision}.`);
+            setSyncNotice(`Code updated · revision ${result.revision}`);
           } else if (result.kind === "conflict") {
             setSaveStatus({
               kind: "error",
@@ -177,6 +196,115 @@ export function CompilerHarness() {
     }, 1_500);
     return () => window.clearTimeout(timeout);
   }, [editorLoaded, program, writeConsole]);
+
+  const refreshCloudState = useCallback(async () => {
+    const currentBinding = loadClassroomBinding();
+    if (!currentBinding) return;
+    const next = await loadBoundWorkspaceState();
+    if (!next) return;
+    setCloudState(next);
+    const normalizedBinding = loadClassroomBinding();
+    if (normalizedBinding?.sessionId !== classroomBinding?.sessionId) {
+      setClassroomBinding(normalizedBinding);
+    }
+    const remoteRevision = Number(next.workspace.revision);
+    if (remoteRevision <= currentBinding.revision) return;
+    const remoteProgram = next.workspace.canonical_program;
+    if (!acceptBoundWorkspaceProgram(remoteProgram, remoteRevision)) {
+      setSyncNotice(
+        `Revision ${remoteRevision} is available, but your unsynced local draft was preserved`,
+      );
+      setSaveStatus({
+        kind: "error",
+        message: `Remote revision ${remoteRevision} is waiting; local blocks were not overwritten`,
+      });
+      return;
+    }
+    const nextState: LocalEditorState = {
+      editorStateVersion: 1,
+      program: structuredClone(remoteProgram),
+      workspaceDrafts: {},
+    };
+    editorStateRef.current = nextState;
+    programRef.current = remoteProgram;
+    setProgram(remoteProgram);
+    setText(formatProgram(remoteProgram));
+    setWorkspaceSyncVersion((version) => version + 1);
+    setClassroomBinding(loadClassroomBinding());
+    setSaveStatus({
+      kind: "saved",
+      message: `Cloud revision ${remoteRevision} received and blocks updated`,
+    });
+    setSyncNotice(`Code updated from instructor · revision ${remoteRevision}`);
+    writeConsole("success", `Cloud revision ${remoteRevision} updated this block workspace.`);
+  }, [classroomBinding?.sessionId, writeConsole]);
+
+  useEffect(() => {
+    if (!editorLoaded || !classroomBinding) return;
+    void refreshCloudState().catch(() => undefined);
+    const channel = classroomBinding.sessionId
+      ? subscribeToClassroom(classroomBinding.sessionId, () => {
+          void refreshCloudState().catch(() => undefined);
+        })
+      : undefined;
+    const poll = window.setInterval(() => {
+      void refreshCloudState().catch(() => undefined);
+    }, 10_000);
+    return () => {
+      window.clearInterval(poll);
+      if (channel) void classroomClient().removeChannel(channel);
+    };
+  }, [classroomBinding, editorLoaded, refreshCloudState]);
+
+  const queueClassroomCommand = async (commandKind: "deploy_program" | "stop_program") => {
+    const binding = loadClassroomBinding();
+    if (!binding) return;
+    setClassroomBusy(true);
+    try {
+      commitWorkspaceRef.current?.();
+      const saved = await autosaveBoundProgram(programRef.current);
+      if (saved.kind === "conflict") {
+        throw new Error(
+          `Cloud revision ${saved.actualRevision} changed first. Review the update before running.`,
+        );
+      }
+      if (saved.kind === "saved") setClassroomBinding(loadClassroomBinding());
+      const result = await callClassroomApi<{ status: string }>("queue_runtime", {
+        workspaceId: binding.workspaceId,
+        commandKind,
+      });
+      const label = commandKind === "deploy_program" ? "Run" : "Stop";
+      setSyncNotice(`${label} sent · ${result.status}`);
+      writeConsole("success", `${label} command accepted by the classroom service.`);
+      await refreshCloudState();
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Classroom command failed.";
+      setSyncNotice(message);
+      writeConsole("error", message);
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const askForHelp = async () => {
+    setClassroomBusy(true);
+    try {
+      await callClassroomApi("request_help", {
+        summary: "I need help with my Sheep City program.",
+      });
+      setSyncNotice("Help request sent to your instructor");
+    } catch (caught) {
+      setSyncNotice(caught instanceof Error ? caught.message : "Help request failed.");
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const leaveClassroom = async () => {
+    await classroomClient().auth.signOut();
+    unbindWorkspace();
+    window.location.assign(classroomHostedAtRoot ? "/classroom/" : "/classroom");
+  };
 
   useEffect(() => {
     if (!mountRef.current || workspaceRef.current) return;
@@ -398,13 +526,29 @@ export function CompilerHarness() {
           </span>
           <div>
             <p className="eyebrow">BadgerBots Code Studio</p>
-            <h1>Sheep City compiler proof</h1>
+            <h1>{classroomBinding ? "Sheep City" : "Sheep City compiler proof"}</h1>
           </div>
         </div>
         <div className="header-actions">
-          <Link className="header-link" href={classroomHostedAtRoot ? "/" : "/classroom"}>
-            Connected classroom
-          </Link>
+          {classroomBinding ? (
+            <>
+              <button
+                className="studio-run-button"
+                type="button"
+                disabled={classroomBusy}
+                onClick={() => void queueClassroomCommand("deploy_program")}
+              >
+                ▶ Run
+              </button>
+              <button className="header-link" type="button" onClick={() => setDrawerOpen(true)}>
+                Classroom controls
+              </button>
+            </>
+          ) : (
+            <Link className="header-link" href={classroomHostedAtRoot ? "/" : "/classroom"}>
+              Connected classroom
+            </Link>
+          )}
           {classroomHostedAtRoot ? null : (
             <>
               <Link className="header-link" href="/curriculum">
@@ -423,10 +567,21 @@ export function CompilerHarness() {
       </header>
 
       <section className="notice" aria-label="Prototype limitation">
-        <strong>Block editor:</strong> work saves locally immediately. When opened from Connected
-        Classroom, valid canonical changes also autosave to that cloud workspace after 1.5 seconds;
-        Run remains an explicit classroom action.
+        <strong>{classroomBinding ? "Live classroom workspace:" : "Block editor:"}</strong>{" "}
+        {classroomBinding
+          ? "Changes save automatically. Instructor updates arrive here without leaving the editor."
+          : "Work saves locally immediately. Open a classroom workspace to sync and run in Minecraft."}
       </section>
+
+      {syncNotice ? (
+        <div className="sync-confirmation" role="status">
+          <span aria-hidden="true">✓</span>
+          {syncNotice}
+          <button type="button" aria-label="Dismiss confirmation" onClick={() => setSyncNotice("")}>
+            ×
+          </button>
+        </div>
+      ) : null}
 
       <section className="workspace-card">
         <div className="workspace-toolbar">
@@ -445,17 +600,19 @@ export function CompilerHarness() {
             ))}
           </div>
           <div className="mode-controls">
-            <label className="instructor-toggle">
-              <input
-                type="checkbox"
-                checked={instructorTools}
-                onChange={(event) => {
-                  setInstructorTools(event.target.checked);
-                  if (!event.target.checked) setMode("blocks");
-                }}
-              />
-              Local instructor tools
-            </label>
+            {!classroomBinding || classroomBinding.role === "instructor" ? (
+              <label className="instructor-toggle">
+                <input
+                  type="checkbox"
+                  checked={instructorTools}
+                  onChange={(event) => {
+                    setInstructorTools(event.target.checked);
+                    if (!event.target.checked) setMode("blocks");
+                  }}
+                />
+                Instructor text mode
+              </label>
+            ) : null}
             <div className="segmented" aria-label="Editor mode">
               <button
                 type="button"
@@ -489,14 +646,9 @@ export function CompilerHarness() {
             <p>
               {searchResults.length} of {blockCatalog.length} blocks available
             </p>
-            <ul>
-              {searchResults.map((entry) => (
-                <li key={entry.type}>
-                  <span>{entry.category}</span>
-                  {entry.label}
-                </li>
-              ))}
-            </ul>
+            <p className="library-hint">
+              Choose a category beside the canvas, then drag blocks into your event.
+            </p>
           </aside>
 
           <section className="editor-panel" aria-label={`${mode} editor`}>
@@ -536,23 +688,40 @@ export function CompilerHarness() {
             {saveStatus.message}
           </div>
           <div className="actions">
-            <button
-              type="button"
-              className="quiet"
-              onClick={() => loadFixture(sheepCityStarterProgram, "Starter fixture")}
-            >
-              Restore starter
-            </button>
-            <button
-              type="button"
-              className="quiet"
-              onClick={() => loadFixture(sheepCityCompletedExample, "Completed compiler fixture")}
-            >
-              Load completed fixture
-            </button>
-            <button type="button" className="primary" onClick={validate}>
-              Validate &amp; compile preview
-            </button>
+            {!classroomBinding ? (
+              <>
+                <button
+                  type="button"
+                  className="quiet"
+                  onClick={() => loadFixture(sheepCityStarterProgram, "Starter fixture")}
+                >
+                  Restore starter
+                </button>
+                <button
+                  type="button"
+                  className="quiet"
+                  onClick={() =>
+                    loadFixture(sheepCityCompletedExample, "Completed compiler fixture")
+                  }
+                >
+                  Load completed fixture
+                </button>
+              </>
+            ) : null}
+            {classroomBinding ? (
+              <button
+                type="button"
+                className="primary"
+                disabled={classroomBusy}
+                onClick={() => void queueClassroomCommand("deploy_program")}
+              >
+                ▶ Run in Minecraft
+              </button>
+            ) : (
+              <button type="button" className="primary" onClick={validate}>
+                Validate &amp; compile preview
+              </button>
+            )}
           </div>
         </footer>
       </section>
@@ -577,6 +746,98 @@ export function CompilerHarness() {
           )}
         </div>
       </section>
+
+      {classroomBinding ? (
+        <>
+          <button
+            className={drawerOpen ? "drawer-scrim open" : "drawer-scrim"}
+            type="button"
+            aria-label="Close classroom controls"
+            onClick={() => setDrawerOpen(false)}
+          />
+          <aside
+            className={drawerOpen ? "classroom-drawer open" : "classroom-drawer"}
+            aria-label="Classroom controls"
+            aria-hidden={!drawerOpen}
+            inert={!drawerOpen}
+          >
+            <div className="drawer-heading">
+              <div>
+                <p className="eyebrow">Connected workspace</p>
+                <h2>Sheep City controls</h2>
+              </div>
+              <button
+                className="drawer-close"
+                type="button"
+                aria-label="Close classroom controls"
+                onClick={() => setDrawerOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="drawer-status-grid">
+              <div>
+                <small>Cloud revision</small>
+                <strong>{cloudState?.workspace.revision ?? classroomBinding.revision}</strong>
+              </div>
+              <div>
+                <small>Minecraft</small>
+                <strong>
+                  {cloudState?.workspace.active_runtime_version_id ? "Running" : "Stopped"}
+                </strong>
+              </div>
+              <div>
+                <small>Editing as</small>
+                <strong>{classroomBinding.role === "instructor" ? "Instructor" : "Student"}</strong>
+              </div>
+            </div>
+            <div className="drawer-primary-actions">
+              <button
+                className="primary-button"
+                disabled={classroomBusy}
+                onClick={() => void queueClassroomCommand("deploy_program")}
+              >
+                ▶ Run latest code
+              </button>
+              <button
+                className="danger-button"
+                disabled={classroomBusy}
+                onClick={() => void queueClassroomCommand("stop_program")}
+              >
+                ■ Stop program
+              </button>
+            </div>
+            <div className="drawer-message" aria-live="polite">
+              <strong>Latest activity</strong>
+              <span>
+                {syncNotice ??
+                  (cloudState?.latestCommand
+                    ? `${cloudState.latestCommand.command_kind}: ${cloudState.latestCommand.status}`
+                    : "Code is connected and ready.")}
+              </span>
+            </div>
+            {classroomBinding.role === "camper" ? (
+              <button
+                className="secondary-button"
+                disabled={classroomBusy}
+                onClick={() => void askForHelp()}
+              >
+                Raise hand
+              </button>
+            ) : (
+              <Link
+                className="secondary-button drawer-link"
+                href={classroomHostedAtRoot ? "/" : "/classroom"}
+              >
+                Return to instructor roster
+              </Link>
+            )}
+            <button className="drawer-signout" type="button" onClick={() => void leaveClassroom()}>
+              Sign out of classroom
+            </button>
+          </aside>
+        </>
+      ) : null}
     </main>
   );
 }

@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.110.8";
 import {
   ClassroomApiError,
-  createJoinCode,
+  deriveJoinCode,
   hmacHex,
   isRecord,
   nativeHostOnboardingActionAllowed,
@@ -105,6 +105,8 @@ async function route(
       return provisionAssistant(await requireInstructor(request), body);
     case "list_sessions":
       return listSessions(await requireInstructor(request));
+    case "session_join_code":
+      return sessionJoinCode(await requireInstructor(request), body);
     case "session_snapshot":
       return sessionSnapshot(
         await requireInstructor(request),
@@ -116,6 +118,8 @@ async function route(
       return joinClassroom(body, request);
     case "workspace":
       return camperWorkspace(await requireCamper(request));
+    case "workspace_state":
+      return workspaceState(request, body);
     case "save_program":
       return saveProgram(request, body);
     case "request_help":
@@ -277,8 +281,8 @@ async function createSession(
     throw new ClassroomApiError(404, "not_found", "Location was not found.");
   }
 
-  const random = crypto.getRandomValues(new Uint8Array(8));
-  const joinCode = createJoinCode(random);
+  const sessionId = crypto.randomUUID();
+  const joinCode = await deriveJoinCode(credentialPepper, sessionId);
   const joinCodeDigest = await hmacHex(credentialPepper, joinCode);
   const today = new Date().toISOString().slice(0, 10);
   if (endsOn < today) {
@@ -288,7 +292,6 @@ async function createSession(
       "The session end date cannot be in the past.",
     );
   }
-  const sessionId = crypto.randomUUID();
   const { error } = await admin.from("sessions").insert({
     id: sessionId,
     organization_id: organizationId,
@@ -317,6 +320,33 @@ async function createSession(
     actorKind: "instructor",
     actorId: instructor.instructorId,
     action: "session.create",
+    targetKind: "session",
+    targetId: sessionId,
+  });
+  return { sessionId, joinCode };
+}
+
+async function sessionJoinCode(
+  instructor: InstructorContext,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const sessionId = requiredString(body, "sessionId", 64);
+  await requireSessionInstructor(instructor.instructorId, sessionId);
+  const joinCode = await deriveJoinCode(credentialPepper, sessionId);
+  const joinCodeDigest = await hmacHex(credentialPepper, joinCode);
+  const { data: session, error } = await admin
+    .from("sessions")
+    .update({ join_code_digest: joinCodeDigest })
+    .eq("id", sessionId)
+    .select("organization_id")
+    .single();
+  if (error || !session) throw databaseError();
+  await audit({
+    organizationId: session.organization_id,
+    sessionId,
+    actorKind: "instructor",
+    actorId: instructor.instructorId,
+    action: "session.join_code.view",
     targetKind: "session",
     targetId: sessionId,
   });
@@ -666,6 +696,32 @@ async function camperWorkspace(
     .single();
   if (error) throw databaseError();
   return { workspace: data };
+}
+
+async function workspaceState(
+  request: Request,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const workspaceId = requiredString(body, "workspaceId", 64);
+  await requireWorkspaceActor(request, workspaceId);
+  const { data: workspace, error } = await admin
+    .from("project_workspaces")
+    .select(
+      "id,session_id,revision,canonical_program,active_runtime_version_id,updated_at",
+    )
+    .eq("id", workspaceId)
+    .single();
+  if (error || !workspace) throw databaseError();
+  await assertSessionActive(workspace.session_id);
+  const { data: command, error: commandError } = await admin
+    .from("classroom_commands")
+    .select("id,command_kind,status,acknowledgement_code,issued_at")
+    .eq("workspace_id", workspaceId)
+    .order("issued_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (commandError) throw databaseError();
+  return { workspace, latestCommand: command ?? null };
 }
 
 async function saveProgram(

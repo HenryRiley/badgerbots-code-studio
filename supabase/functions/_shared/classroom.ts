@@ -198,7 +198,19 @@ export function createJoinCode(random: Uint8Array): string {
     .join("");
 }
 
+export async function deriveJoinCode(
+  secret: string,
+  sessionId: string,
+): Promise<string> {
+  const signature = await hmacBytes(secret, `join-code:${sessionId}`);
+  return createJoinCode(signature);
+}
+
 export async function hmacHex(secret: string, value: string): Promise<string> {
+  return bytesToHex(await hmacBytes(secret, value));
+}
+
+async function hmacBytes(secret: string, value: string): Promise<Uint8Array> {
   if (secret.length < 32) {
     throw new Error("Credential pepper must contain at least 32 characters.");
   }
@@ -209,10 +221,8 @@ export async function hmacHex(secret: string, value: string): Promise<string> {
     false,
     ["sign"],
   );
-  return bytesToHex(
-    new Uint8Array(
-      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)),
-    ),
+  return new Uint8Array(
+    await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value)),
   );
 }
 

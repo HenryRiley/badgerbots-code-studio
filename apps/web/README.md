@@ -30,3 +30,10 @@ The internal Apache prototype is built with `BADGERBOTS_CLASSROOM_STATIC_DEPLOYM
 serves the classroom UI at the export root, prefixes assets with `/classroom`, and is packaged by
 `pnpm web:package:classroom`. See `docs/apache-classroom-deployment.md`; this same-origin prototype
 is limited to synthetic camper data.
+
+Checkpoint 23 consolidates a bound student workspace into `/editor`: block search, Blockly, save
+state, Run, and a slide-out classroom control panel share one page. Authorized instructor edits
+autosave as new canonical revisions; an unchanged student editor receives and confirms them through
+Realtime with a ten-second polling fallback. Unsynced student drafts fail closed rather than being
+overwritten. Assigned instructors can retrieve a stable weekly class code repeatedly; only its
+HMAC digest is stored.

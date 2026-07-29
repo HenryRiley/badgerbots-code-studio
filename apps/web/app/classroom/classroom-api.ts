@@ -11,11 +11,30 @@ import {
 export const CLASSROOM_BINDING_KEY = "badgerbots:classroom:workspace:v1";
 
 export interface ClassroomBinding {
-  version: 1;
+  version: 2;
   workspaceId: string;
+  sessionId: string;
   revision: number;
   role: "camper" | "instructor";
   programFingerprint: string;
+}
+
+export interface BoundWorkspaceState {
+  workspace: {
+    id: string;
+    session_id: string;
+    revision: number;
+    canonical_program: Program;
+    active_runtime_version_id?: string | null;
+    updated_at: string;
+  };
+  latestCommand?: {
+    id: string;
+    command_kind: string;
+    status: string;
+    acknowledgement_code?: string | null;
+    issued_at: string;
+  } | null;
 }
 
 let browserClient: SupabaseClient | undefined;
@@ -129,9 +148,16 @@ export function loadClassroomBinding(): ClassroomBinding | undefined {
   const raw = localStorage.getItem(CLASSROOM_BINDING_KEY);
   if (!raw) return undefined;
   try {
-    const value = JSON.parse(raw) as Partial<ClassroomBinding>;
+    const value = JSON.parse(raw) as {
+      version?: number;
+      workspaceId?: string;
+      sessionId?: string;
+      revision?: number;
+      role?: string;
+      programFingerprint?: string;
+    };
     if (
-      value.version !== 1 ||
+      (value.version !== 1 && value.version !== 2) ||
       typeof value.workspaceId !== "string" ||
       !Number.isSafeInteger(value.revision) ||
       (value.revision ?? -1) < 0 ||
@@ -139,10 +165,62 @@ export function loadClassroomBinding(): ClassroomBinding | undefined {
       typeof value.programFingerprint !== "string"
     )
       return undefined;
-    return value as ClassroomBinding;
+    return {
+      version: 2,
+      workspaceId: value.workspaceId,
+      sessionId: value.version === 2 && typeof value.sessionId === "string" ? value.sessionId : "",
+      revision: value.revision,
+      role: value.role,
+      programFingerprint: value.programFingerprint,
+    } as ClassroomBinding;
   } catch {
     return undefined;
   }
+}
+
+export async function loadBoundWorkspaceState(): Promise<BoundWorkspaceState | undefined> {
+  const binding = loadClassroomBinding();
+  if (!binding) return undefined;
+  const state = await callClassroomApi<BoundWorkspaceState>("workspace_state", {
+    workspaceId: binding.workspaceId,
+  });
+  if (!binding.sessionId && state.workspace.session_id) {
+    localStorage.setItem(
+      CLASSROOM_BINDING_KEY,
+      JSON.stringify({
+        ...binding,
+        sessionId: state.workspace.session_id,
+      } satisfies ClassroomBinding),
+    );
+  }
+  return state;
+}
+
+export function acceptBoundWorkspaceProgram(program: Program, revision: number): boolean {
+  const binding = loadClassroomBinding();
+  if (!binding) return false;
+  const local = loadLocalEditorState(localStorage);
+  if (
+    local.kind === "loaded" &&
+    JSON.stringify(local.state.program) !== binding.programFingerprint
+  ) {
+    return false;
+  }
+  const fingerprint = JSON.stringify(program);
+  localStorage.setItem(
+    CLASSROOM_BINDING_KEY,
+    JSON.stringify({
+      ...binding,
+      revision,
+      programFingerprint: fingerprint,
+    } satisfies ClassroomBinding),
+  );
+  const saved = saveLocalEditorState(localStorage, {
+    editorStateVersion: 1,
+    program: structuredClone(program),
+    workspaceDrafts: {},
+  });
+  return saved.ok;
 }
 
 export async function autosaveBoundProgram(
