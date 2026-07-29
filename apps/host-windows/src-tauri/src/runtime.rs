@@ -35,11 +35,17 @@ pub struct RuntimeConfiguration {
 pub struct ArtifactPreparation {
     pub java_version: String,
     pub java_sha256: String,
+    #[serde(default = "default_java_source")]
+    pub java_source: String,
     pub java_repaired: bool,
     pub paper_version: String,
     pub paper_sha256: String,
     pub plugin_version: String,
     pub plugin_sha256: String,
+}
+
+fn default_java_source() -> String {
+    "private-pinned".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +89,7 @@ impl RuntimeStore {
             teacher_username,
             server_port,
             max_heap_gib,
-            java_version: format!("{} (installation pending)", managed_java::JAVA_VERSION),
+            java_version: "Java 21 (detection pending)".to_string(),
             eula_accepted,
         };
         persist_text_atomic(&self.directory.join("eula.txt"), "eula=true\n")?;
@@ -115,7 +121,7 @@ impl RuntimeStore {
         } else {
             let client = reqwest::Client::builder()
                 .user_agent(
-                    "BadgerBots-Code-Studio/0.8.1 (https://github.com/HenryRiley/badgerbots-code-studio)",
+                    "BadgerBots-Code-Studio/0.8.2 (https://github.com/HenryRiley/badgerbots-code-studio)",
                 )
                 .connect_timeout(Duration::from_secs(20))
                 .timeout(Duration::from_secs(180))
@@ -162,7 +168,8 @@ impl RuntimeStore {
         }
         let manifest = ArtifactPreparation {
             java_version: java.version,
-            java_sha256: java.archive_sha256,
+            java_sha256: java.fingerprint,
+            java_source: java.source.as_str().to_string(),
             java_repaired: java.repaired,
             paper_version: PAPER_VERSION.to_string(),
             paper_sha256: PAPER_SHA256.to_string(),
@@ -178,7 +185,10 @@ impl RuntimeStore {
         self.create_configuration_backup(&manifest)?;
         progress(InstallProgress {
             phase: "complete".to_string(),
-            message: if manifest.java_repaired {
+            message: if manifest.java_source == "existing-system" {
+                "Existing Java 21, Paper, and the BadgerBots plugin are verified; no duplicate Java runtime was installed."
+                    .to_string()
+            } else if manifest.java_repaired {
                 "Private Java 21 was repaired; Java, Paper, and the BadgerBots plugin are verified."
                     .to_string()
             } else {
@@ -241,13 +251,13 @@ impl RuntimeStore {
                     .to_string(),
             );
         }
-        let java = managed_java::verify(&self.directory).map_err(|_| {
-            "The private Java 21 runtime is missing or damaged. Select Verify & repair Java."
+        let java = managed_java::verify(&self.directory, &artifacts.java_source).map_err(|_| {
+            "The selected Java 21 runtime is missing, damaged, or changed. Select Verify & repair Java."
                 .to_string()
         })?;
-        if java.archive_sha256 != artifacts.java_sha256 {
+        if java.fingerprint != artifacts.java_sha256 {
             return Err(
-                "The private Java 21 runtime does not match the approved artifact record. Select Verify & repair Java."
+                "The selected Java 21 runtime does not match the approved artifact record. Select Verify & repair Java."
                     .to_string(),
             );
         }

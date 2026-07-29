@@ -7,12 +7,14 @@ server configuration without PowerShell or configuration-file editing.
 
 Step 4 asks for the exact teacher Minecraft Java username, server port, memory limit, and explicit
 Minecraft EULA acceptance. Host atomically creates a private application-local runtime directory
-with restricted server settings. The next graphical step downloads Eclipse Temurin JRE
-21.0.11+10, verifies its pinned archive SHA-256, and installs it only below that directory. It
-never reads or changes global Java, `JAVA_HOME`, PATH, the Java registry, or an existing Minecraft
-server.
+with restricted server settings. The next graphical step first checks `JAVA_HOME`, PATH, and
+standard vendor folders for an existing 64-bit Java 21 runtime. It verifies the executable,
+records its SHA-256, and uses that exact path without modifying it. If no compatible runtime is
+available, Host downloads Eclipse Temurin JRE 21.0.11+10, verifies its pinned archive SHA-256, and
+installs it only below the BadgerBots directory.
 
-Host 0.8.1 can download the pinned Java and Paper builds, verify their SHA-256 values, install the
+Host 0.8.2 can reuse a verified existing Java 21 runtime or download the pinned Java and Paper
+builds, verify their SHA-256 values, install the
 plugin embedded by Windows CI, create a configuration recovery snapshot, and request a
 Private-network-only Windows firewall rule through a normal UAC prompt. Java download, installed
 file verification, and repair progress stay inside the app without PowerShell.
@@ -40,11 +42,12 @@ The embedded Paper plugin creates the prototype layout only when the Sheep City 
 new. It preserves working-world and restored-snapshot block state on ordinary starts. The
 graphical Reset action remains the explicit path that removes Sheep City and requests regeneration.
 
-Before every Paper start, Host verifies every file in the private Java runtime. Missing, changed,
-or unexpected files trigger a clean download and staged replacement. **Verify & repair Java**
-provides the same operation on demand while Paper is stopped. Paper always launches with the exact
-private `managed-java/temurin-21.0.11+10-windows-x64/bin/java.exe`; it never resolves `java` from
-PATH.
+Before every Paper start, Host verifies the selected Java executable and its recorded SHA-256. An
+existing runtime that disappears or changes is rejected and graphical preparation searches again,
+then falls back to the pinned private runtime if necessary. A selected private runtime still
+receives complete per-file verification and staged repair. **Verify & repair Java** provides the
+same operation on demand while Paper is stopped. Paper launches the exact verified path recorded
+by Host and never resolves `java` dynamically at launch time.
 
 Host does **not** yet create the encrypted/compressed final retention export, remove/repair the
 firewall rule, or install an authenticated application update. Forced process termination,

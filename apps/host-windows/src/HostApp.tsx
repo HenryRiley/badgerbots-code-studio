@@ -379,11 +379,11 @@ export function HostApp() {
                   void perform(async () => {
                     setInstallProgress(undefined);
                     setSnapshot(await gateway.repairManagedJava());
-                    return "Managed Java 21 verification and repair completed inside Host.";
+                    return "Java 21 detection, verification, and repair completed inside Host.";
                   })
                 }
               >
-                {busy ? "Checking managed Java…" : "Verify & repair Java"}
+                {busy ? "Checking Java 21…" : "Verify & repair Java"}
               </button>
             ) : null}
           </article>
@@ -665,8 +665,9 @@ function OnboardingWizard(props: {
             <h2>Prepare the private classroom server</h2>
             <p>
               Host will create the managed server folder and safe configuration. The next screen
-              installs a private Java 21 runtime without opening a command window or changing
-              Windows Java settings.
+              first checks for a compatible existing Java 21 installation. If none is available, it
+              installs a private runtime without opening a command window or changing Windows Java
+              settings.
             </p>
           </div>
         </div>
@@ -755,9 +756,9 @@ function OnboardingWizard(props: {
             <p className="eyebrow">Verified server files</p>
             <h2>Install the Minecraft runtime</h2>
             <p>
-              Host will download the pinned Paper server from PaperMC, verify its SHA-256 checksum,
-              download a free pinned Eclipse Temurin Java 21 runtime, verify both checksums, install
-              them privately, add the bundled BadgerBots plugin, and create a recovery snapshot.
+              Host will scan for and verify an existing 64-bit Java 21 runtime first. If none is
+              compatible, it downloads the pinned Eclipse Temurin runtime privately. It also
+              verifies Paper, adds the bundled BadgerBots plugin, and creates a recovery snapshot.
             </p>
           </div>
         </div>
@@ -770,7 +771,7 @@ function OnboardingWizard(props: {
             onClick={() =>
               void props.perform(async () => {
                 props.onRuntimePrepared(await gateway.prepareRuntimeArtifacts());
-                return "Private Java 21, Paper, and the BadgerBots plugin passed verification.";
+                return "Java 21, Paper, and the BadgerBots plugin passed verification.";
               })
             }
           >

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(windows)]
+use std::env;
 #[cfg(any(windows, test))]
 use std::io::{Cursor, Write};
 use std::{
@@ -16,6 +18,7 @@ pub(crate) const JAVA_ARCHIVE_SHA256: &str =
 #[cfg(windows)]
 const JAVA_ARCHIVE_URL: &str = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.11%2B10/OpenJDK21U-jre_x64_windows_hotspot_21.0.11_10.zip";
 const JAVA_DIRECTORY_NAME: &str = "temurin-21.0.11+10-windows-x64";
+const EXTERNAL_JAVA_MANIFEST_NAME: &str = "existing-java.json";
 #[cfg(windows)]
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 #[cfg(any(windows, test))]
@@ -37,9 +40,25 @@ pub(crate) struct InstallProgress {
 #[derive(Debug, Clone)]
 pub(crate) struct ManagedJava {
     pub version: String,
-    pub archive_sha256: String,
+    pub fingerprint: String,
     pub executable_path: PathBuf,
     pub repaired: bool,
+    pub source: JavaSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JavaSource {
+    ExistingSystem,
+    PrivatePinned,
+}
+
+impl JavaSource {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ExistingSystem => "existing-system",
+            Self::PrivatePinned => "private-pinned",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +77,15 @@ struct InstalledFile {
     path: String,
     bytes: u64,
     sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExistingJavaManifest {
+    schema_version: u8,
+    executable_path: PathBuf,
+    executable_sha256: String,
+    version: String,
 }
 
 pub(crate) async fn ensure(
@@ -80,7 +108,7 @@ pub(crate) async fn ensure(
     );
     if let Ok(manifest) = verify_installation(&installation, &manifest_path) {
         let executable_path = java_executable(&installation);
-        let version = verify_java_process(&executable_path)?;
+        let version = inspect_java_process(&executable_path)?;
         emit(
             progress,
             "verifying",
@@ -92,9 +120,10 @@ pub(crate) async fn ensure(
         );
         return Ok(ManagedJava {
             version,
-            archive_sha256: manifest.archive_sha256,
+            fingerprint: manifest.archive_sha256,
             executable_path,
             repaired: false,
+            source: JavaSource::PrivatePinned,
         });
     }
 
@@ -117,6 +146,27 @@ pub(crate) async fn ensure(
         }
         fs::create_dir_all(&root)
             .map_err(|_| "The private Java runtime directory could not be prepared.".to_string())?;
+        emit(
+            progress,
+            "checking",
+            "Looking for an existing compatible Java 21 installation…",
+            0,
+            None,
+            Some(5),
+            repair,
+        );
+        if let Some(java) = find_existing_java(&root)? {
+            emit(
+                progress,
+                "verifying",
+                "Compatible Java 21 found and verified; no duplicate runtime was installed.",
+                0,
+                None,
+                Some(15),
+                false,
+            );
+            return Ok(java);
+        }
         emit(
             progress,
             "downloading",
@@ -202,7 +252,7 @@ pub(crate) async fn ensure(
         );
         verify_installation(&installation, &manifest_path)?;
         let executable_path = java_executable(&installation);
-        let version = verify_java_process(&executable_path)?;
+        let version = inspect_java_process(&executable_path)?;
         emit(
             progress,
             "verifying",
@@ -218,24 +268,162 @@ pub(crate) async fn ensure(
         );
         Ok(ManagedJava {
             version,
-            archive_sha256: JAVA_ARCHIVE_SHA256.to_string(),
+            fingerprint: JAVA_ARCHIVE_SHA256.to_string(),
             executable_path,
             repaired: repair,
+            source: JavaSource::PrivatePinned,
         })
     }
 }
 
-pub(crate) fn verify(runtime_directory: &Path) -> Result<ManagedJava, String> {
+pub(crate) fn verify(runtime_directory: &Path, source: &str) -> Result<ManagedJava, String> {
     let root = runtime_directory.join("managed-java");
+    if source == JavaSource::ExistingSystem.as_str() {
+        return verify_existing_java_manifest(&root);
+    }
     let installation = root.join(JAVA_DIRECTORY_NAME);
     let manifest = verify_installation(&installation, &root.join("manifest.json"))?;
     let executable_path = java_executable(&installation);
     Ok(ManagedJava {
         version: manifest.version,
-        archive_sha256: manifest.archive_sha256,
+        fingerprint: manifest.archive_sha256,
         executable_path,
         repaired: false,
+        source: JavaSource::PrivatePinned,
     })
+}
+
+#[cfg(windows)]
+fn find_existing_java(root: &Path) -> Result<Option<ManagedJava>, String> {
+    if let Ok(java) = verify_existing_java_manifest(root) {
+        return Ok(Some(java));
+    }
+
+    for candidate in discover_existing_java_candidates() {
+        let Ok(canonical) = candidate.canonicalize() else {
+            continue;
+        };
+        if !canonical.is_absolute()
+            || !canonical.is_file()
+            || canonical
+                .file_name()
+                .is_none_or(|name| !name.to_string_lossy().eq_ignore_ascii_case("java.exe"))
+        {
+            continue;
+        }
+        let Ok(version) = inspect_java_process(&canonical) else {
+            continue;
+        };
+        let Some(executable_sha256) = checksum_file(&canonical) else {
+            continue;
+        };
+        let manifest = ExistingJavaManifest {
+            schema_version: 1,
+            executable_path: canonical.clone(),
+            executable_sha256: executable_sha256.clone(),
+            version: version.clone(),
+        };
+        let serialized = serde_json::to_vec_pretty(&manifest)
+            .map_err(|_| "The existing Java verification record could not be saved.".to_string())?;
+        persist_bytes_atomic(&root.join(EXTERNAL_JAVA_MANIFEST_NAME), &serialized)?;
+        return Ok(Some(ManagedJava {
+            version,
+            fingerprint: executable_sha256,
+            executable_path: canonical,
+            repaired: false,
+            source: JavaSource::ExistingSystem,
+        }));
+    }
+    Ok(None)
+}
+
+fn verify_existing_java_manifest(root: &Path) -> Result<ManagedJava, String> {
+    let manifest: ExistingJavaManifest = serde_json::from_slice(
+        &fs::read(root.join(EXTERNAL_JAVA_MANIFEST_NAME))
+            .map_err(|_| "The existing Java verification record is missing.".to_string())?,
+    )
+    .map_err(|_| "The existing Java verification record is invalid.".to_string())?;
+    if manifest.schema_version != 1
+        || !manifest.executable_path.is_absolute()
+        || manifest
+            .executable_path
+            .file_name()
+            .is_none_or(|name| !name.to_string_lossy().eq_ignore_ascii_case("java.exe"))
+        || checksum_file(&manifest.executable_path).as_deref()
+            != Some(manifest.executable_sha256.as_str())
+    {
+        return Err("The existing Java 21 installation changed or is unavailable.".to_string());
+    }
+    let version = inspect_java_process(&manifest.executable_path)?;
+    Ok(ManagedJava {
+        version,
+        fingerprint: manifest.executable_sha256,
+        executable_path: manifest.executable_path,
+        repaired: false,
+        source: JavaSource::ExistingSystem,
+    })
+}
+
+#[cfg(windows)]
+fn discover_existing_java_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(java_home) = env::var_os("JAVA_HOME") {
+        candidates.push(PathBuf::from(java_home).join("bin").join("java.exe"));
+    }
+
+    let mut where_command = Command::new("where.exe");
+    where_command.arg("java.exe");
+    use std::os::windows::process::CommandExt;
+    where_command.creation_flags(0x0800_0000);
+    if let Ok(output) = where_command.output() {
+        if output.status.success() {
+            candidates.extend(
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(PathBuf::from),
+            );
+        }
+    }
+
+    let mut vendor_roots = Vec::new();
+    if let Some(program_files) = env::var_os("ProgramFiles") {
+        let program_files = PathBuf::from(program_files);
+        for vendor in [
+            "Eclipse Adoptium",
+            "Java",
+            "Microsoft",
+            "Amazon Corretto",
+            "BellSoft",
+            "Zulu",
+        ] {
+            vendor_roots.push(program_files.join(vendor));
+        }
+    }
+    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+        vendor_roots.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Eclipse Adoptium"),
+        );
+    }
+    for vendor_root in vendor_roots {
+        let Ok(entries) = fs::read_dir(vendor_root) else {
+            continue;
+        };
+        for entry in entries.flatten().take(128) {
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                candidates.push(entry.path().join("bin").join("java.exe"));
+            }
+        }
+    }
+
+    let mut unique = BTreeSet::new();
+    candidates
+        .into_iter()
+        .filter(|candidate| unique.insert(candidate.clone()))
+        .collect()
 }
 
 #[cfg(windows)]
@@ -245,7 +433,7 @@ async fn download(
 ) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .user_agent(
-            "BadgerBots-Code-Studio/0.8.1 (https://github.com/HenryRiley/badgerbots-code-studio)",
+            "BadgerBots-Code-Studio/0.8.2 (https://github.com/HenryRiley/badgerbots-code-studio)",
         )
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(300))
@@ -465,10 +653,10 @@ fn collect_files(root: &Path) -> Result<BTreeSet<String>, String> {
     Ok(files)
 }
 
-fn verify_java_process(executable: &Path) -> Result<String, String> {
+fn inspect_java_process(executable: &Path) -> Result<String, String> {
     let mut command = Command::new(executable);
     command
-        .arg("-version")
+        .args(["-XshowSettings:properties", "-version"])
         .env_remove("JAVA_HOME")
         .env_remove("JAVA_TOOL_OPTIONS")
         .env_remove("JDK_JAVA_OPTIONS")
@@ -480,7 +668,7 @@ fn verify_java_process(executable: &Path) -> Result<String, String> {
         command.creation_flags(0x0800_0000);
     }
     let output = command.output().map_err(|_| {
-        "The private Java 21 runtime could not start. Select Verify & repair Java.".to_string()
+        "The Java runtime could not start. Select Verify & repair Java.".to_string()
     })?;
     let combined = format!(
         "{}{}",
@@ -488,16 +676,45 @@ fn verify_java_process(executable: &Path) -> Result<String, String> {
         String::from_utf8_lossy(&output.stdout)
     );
     let first_line = combined.lines().next().unwrap_or_default().trim();
-    if !output.status.success() || (!first_line.contains("\"21.") && !first_line.contains(" 21.")) {
+    let java_version = java_property(&combined, "java.version").unwrap_or(first_line);
+    let architecture = java_property(&combined, "os.arch").unwrap_or_default();
+    if !output.status.success()
+        || !is_java_21(java_version)
+        || !matches!(
+            architecture.to_ascii_lowercase().as_str(),
+            "amd64" | "x86_64"
+        )
+    {
         return Err(
-            "The private runtime did not identify itself as Java 21. Select Verify & repair Java."
-                .to_string(),
+            "The Java runtime must be a working 64-bit Java 21 installation. Select Verify & repair Java."
+                .to_string()
         );
     }
+    let version_line = combined
+        .lines()
+        .map(str::trim)
+        .find(|line| line.contains("version"))
+        .unwrap_or(first_line);
     Ok(format!(
-        "{JAVA_VERSION} — {}",
-        first_line.chars().take(100).collect::<String>()
+        "Java 21 ({architecture}) — {}",
+        version_line.chars().take(100).collect::<String>()
     ))
+}
+
+fn java_property<'a>(output: &'a str, property: &str) -> Option<&'a str> {
+    output.lines().find_map(|line| {
+        let (name, value) = line.trim().split_once('=')?;
+        (name.trim() == property).then_some(value.trim())
+    })
+}
+
+fn is_java_21(version: &str) -> bool {
+    version
+        .trim()
+        .trim_matches('"')
+        .split(['.', '-', '+'])
+        .next()
+        == Some("21")
 }
 
 fn java_executable(installation: &Path) -> PathBuf {
@@ -692,5 +909,22 @@ mod tests {
         fs::create_dir_all(&root).expect("test root");
         assert!(extract_archive(&bytes.into_inner(), &root).is_err());
         fs::remove_dir_all(root).expect("test root cleanup");
+    }
+
+    #[test]
+    fn accepts_only_java_21_major_versions() {
+        assert!(is_java_21("21"));
+        assert!(is_java_21("21.0.11+10"));
+        assert!(is_java_21("\"21.0.11\""));
+        assert!(!is_java_21("17.0.12"));
+        assert!(!is_java_21("210.0.1"));
+    }
+
+    #[test]
+    fn parses_java_property_output_without_trusting_line_order() {
+        let output = "Property settings:\n    os.arch = amd64\n    java.version = 21.0.11\n";
+        assert_eq!(java_property(output, "java.version"), Some("21.0.11"));
+        assert_eq!(java_property(output, "os.arch"), Some("amd64"));
+        assert_eq!(java_property(output, "java.vendor"), None);
     }
 }

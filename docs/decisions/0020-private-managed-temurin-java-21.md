@@ -3,6 +3,7 @@
 - Status: Accepted for the Windows x64 internal prototype
 - Date: 2026-07-27
 - Supersedes: the external system-Java decision in ADR 0015
+- Amended by: ADR 0021, which verifies and reuses compatible Java 21 before installing this fallback
 
 ## Context
 
