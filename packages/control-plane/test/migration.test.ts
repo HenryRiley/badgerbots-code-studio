@@ -174,6 +174,8 @@ describe("portable control-plane migration", () => {
     expect(core).toContain("join public.session_instructors assignment");
     expect(core).toContain("for update of enrollment");
     expect(core).toContain("lower(minecraft_username) = lower(requested_minecraft_username)");
+    expect(core).toContain("revoke all on function");
+    expect(core).toContain("from public");
     expect(security).toContain("revoke all on function");
     expect(security).toContain("to service_role");
     expect(security).not.toContain("to authenticated");

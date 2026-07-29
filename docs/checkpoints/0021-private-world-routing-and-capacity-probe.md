@@ -53,7 +53,8 @@
 - Device UUIDs and Minecraft usernames are operational identifiers; no Microsoft credentials are
   collected. Route snapshots contain no camper display names.
 - Mapping replacement is transactional and restricted to assigned instructors through the Edge
-  API; the SQL function itself is service-role-only.
+  API. The portable migration revokes public execution before commit; the Supabase overlay grants
+  only `service_role`, so a failed second migration remains closed.
 - The benchmark exercises real Paper resources but simulates camper connections. It cannot prove
   Wi-Fi quality, launcher behavior, or 25 physical client sessions. The two Windows JSON files
   must be analyzed before selecting a production world strategy.

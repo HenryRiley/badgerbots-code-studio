@@ -77,4 +77,8 @@ begin
 end;
 $$;
 
+-- Fail closed even before a provider overlay grants its trusted backend role.
+revoke all on function public.set_session_device_minecraft_mapping(uuid, uuid, uuid, text)
+  from public;
+
 commit;
