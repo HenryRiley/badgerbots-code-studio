@@ -21,13 +21,15 @@ Checkpoint 14 begins release productization: the native Windows Host now owns in
 location selection, secure pairing, current-user protected credential storage, and hardware
 probing inside its graphical wizard. The current Checkpoint 15 slices add managed server
 configuration, pinned Paper/plugin verification, configuration recovery evidence, and scoped
-Private-network firewall approval. Host 0.8.1 now downloads and verifies a pinned free Temurin
-Java 21 runtime into its private application-data directory, repairs missing or changed runtime
-files through the graphical UI, and launches Paper with that exact private executable without
-changing global Java. It also runs a real bounded Paper/plugin/bridge readiness test and owns
+Private-network firewall approval. Host 0.9.0 reuses a verified existing Java 21 installation when
+safe, or downloads and verifies a pinned free Temurin runtime privately without changing global
+Java. It repairs missing or changed runtime files through the graphical UI and launches Paper with
+the exact recorded executable. It also runs a real bounded Paper/plugin/bridge readiness test, owns
 permanent Start/Stop/Recover lifecycle controls, conditional Windows
 sleep prevention, clean close handling, and a realtime redacted Paper console without opening a
-command window. It now adds bounded SHA-256 world snapshots, automatic pre-start backup,
+command window. Its installed native outbound worker now uses the protected pairing credential,
+verifies and compiles signed cloud Run/Stop commands, persists bounded retry state, and shows live
+cloud status without a repository or PowerShell. It also adds bounded SHA-256 world snapshots, automatic pre-start backup,
 transactional selectable-snapshot restore, and a safe Sheep City reset. Recovery points identify
 automatic, manual, reset, and crash-recovery snapshots so damage is not accidentally restored just
 because it was backed up most recently. Paper plugin 0.6.1 creates the original Sheep City layout

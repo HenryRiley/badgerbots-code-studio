@@ -433,7 +433,7 @@ async fn download(
 ) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .user_agent(
-            "BadgerBots-Code-Studio/0.8.2 (https://github.com/HenryRiley/badgerbots-code-studio)",
+            "BadgerBots-Code-Studio/0.9.0 (https://github.com/HenryRiley/badgerbots-code-studio)",
         )
         .connect_timeout(std::time::Duration::from_secs(20))
         .timeout(std::time::Duration::from_secs(300))

@@ -13,7 +13,7 @@ records its SHA-256, and uses that exact path without modifying it. If no compat
 available, Host downloads Eclipse Temurin JRE 21.0.11+10, verifies its pinned archive SHA-256, and
 installs it only below the BadgerBots directory.
 
-Host 0.8.2 can reuse a verified existing Java 21 runtime or download the pinned Java and Paper
+Host 0.9.0 can reuse a verified existing Java 21 runtime or download the pinned Java and Paper
 builds, verify their SHA-256 values, install the
 plugin embedded by Windows CI, create a configuration recovery snapshot, and request a
 Private-network-only Windows firewall rule through a normal UAC prompt. Java download, installed
@@ -28,6 +28,13 @@ and **Verify and recover** are native controls. Starting and running output stre
 in-app console in real time, with the newest 80 redacted lines retained. The console is read-only:
 it does not execute arbitrary Paper, Java, or shell commands. A normal app close first asks Paper
 to stop cleanly, and Windows sleep is inhibited only while the server is ready.
+
+When Paper reaches Ready, Host 0.9.0 also starts the installed outbound classroom worker. It reads
+the protected pairing credential natively, verifies signed cloud commands, compiles the supported
+canonical AST, signs the separate local Paper request, and reports connection/command status in
+the server card. This installed path needs no repository checkout, environment variables, Node.js,
+pnpm, PowerShell, or exposed laptop web port. A cloud outage leaves Paper and its last-known-good
+program running while Host retries outbound.
 
 Host now creates a verified operational world snapshot before each normal server start. While
 Paper is stopped, the Recovery panel can also create a backup, select and restore any retained

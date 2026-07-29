@@ -113,6 +113,14 @@ struct ApiError {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ClassroomWorkerConfig {
+    pub api_url: String,
+    pub publishable_key: String,
+    pub host_id: String,
+    pub pairing_token: String,
+}
+
 pub struct OnboardingStore {
     config_path: PathBuf,
     credential_path: PathBuf,
@@ -385,6 +393,34 @@ impl OnboardingStore {
             return Err("The protected Host credential version is unsupported.".to_string());
         }
         Ok((credential.host_id, credential.pairing_token))
+    }
+
+    pub(crate) fn classroom_worker_config(&self) -> Result<ClassroomWorkerConfig, String> {
+        let (service_url, publishable_key) = self.service_config()?;
+        let (host_id, pairing_token) = self.host_credential()?;
+        let configured_host_id = self
+            .config
+            .lock()
+            .map_err(|_| "Host onboarding state is temporarily unavailable.".to_string())?
+            .host_id
+            .clone()
+            .ok_or_else(|| "Pair this Host before starting cloud synchronization.".to_string())?;
+        if configured_host_id != host_id {
+            return Err(
+                "The protected Host credential does not match this installation. Pair the Host again."
+                    .to_string(),
+            );
+        }
+        validate_opaque_id(&host_id, "Host")?;
+        if pairing_token.len() < 32 || pairing_token.len() > 512 {
+            return Err("The protected Host credential is invalid.".to_string());
+        }
+        Ok(ClassroomWorkerConfig {
+            api_url: format!("{service_url}/functions/v1/classroom-api"),
+            publishable_key,
+            host_id,
+            pairing_token,
+        })
     }
 
     fn service_config(&self) -> Result<(String, String), String> {

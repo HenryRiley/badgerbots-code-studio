@@ -98,6 +98,13 @@ export interface HostSnapshot {
     status: "not_checked" | "current" | "available" | "blocked";
     channel: "internal";
   };
+  cloudConnection: {
+    status: "stopped" | "connecting" | "online" | "offline";
+    detail: string;
+    lastSuccessfulPoll?: string;
+    lastCommandId?: string;
+    lastCommandStatus?: string;
+  };
   pendingOutboundMessages: number;
   diagnostics: DiagnosticEvent[];
   serverLogs: string[];
@@ -249,6 +256,10 @@ export function createInitialHostSnapshot(mode: HostSnapshot["mode"]): HostSnaps
     },
     backup: { status: "never", backupCount: 0, totalBytes: 0, snapshots: [] },
     update: { status: "not_checked", channel: "internal" },
+    cloudConnection: {
+      status: "stopped",
+      detail: "Starts automatically with the classroom server.",
+    },
     pendingOutboundMessages: 0,
     diagnostics: [
       diagnostic("HOST_PREVIEW_READY", "Host safety model loaded. Paper controls remain locked."),

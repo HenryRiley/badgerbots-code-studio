@@ -1,4 +1,5 @@
 use crate::runtime::ServerLaunch;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::Serialize;
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -37,8 +38,18 @@ pub(crate) struct ReadinessSignals {
     bridge: bool,
 }
 
+pub(crate) struct SpawnedServer {
+    pub child: Child,
+    pub output: mpsc::Receiver<String>,
+    pub bridge_secret: Vec<u8>,
+}
+
 pub fn run(launch: ServerLaunch) -> Result<ServerTestReport, ServerTestFailure> {
-    let (mut child, receiver) = spawn_server(&launch)?;
+    let SpawnedServer {
+        mut child,
+        output: receiver,
+        ..
+    } = spawn_server(&launch)?;
     let mut logs = Vec::new();
     let mut signals = ReadinessSignals::default();
     let started = Instant::now();
@@ -129,9 +140,7 @@ pub fn run(launch: ServerLaunch) -> Result<ServerTestReport, ServerTestFailure> 
     })
 }
 
-pub(crate) fn spawn_server(
-    launch: &ServerLaunch,
-) -> Result<(Child, mpsc::Receiver<String>), ServerTestFailure> {
+pub(crate) fn spawn_server(launch: &ServerLaunch) -> Result<SpawnedServer, ServerTestFailure> {
     ensure_port_available(launch.configuration.server_port)?;
     std::fs::create_dir_all(launch.bridge_directory.join("inbox")).map_err(|_| {
         failure(
@@ -153,10 +162,7 @@ pub(crate) fn spawn_server(
             Vec::new(),
         )
     })?;
-    let encoded_secret = secret
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let encoded_secret = URL_SAFE_NO_PAD.encode(secret);
 
     let mut command = Command::new(&launch.java_path);
     command
@@ -195,7 +201,11 @@ pub(crate) fn spawn_server(
         )
     })?;
     let receiver = capture_output(&mut child);
-    Ok((child, receiver))
+    Ok(SpawnedServer {
+        child,
+        output: receiver,
+        bridge_secret: secret.to_vec(),
+    })
 }
 
 fn capture_output(child: &mut Child) -> mpsc::Receiver<String> {
