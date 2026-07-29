@@ -40,6 +40,7 @@ jobs:
       - name: Validate protected production settings
         shell: bash
         env:
+          BADGERBOTS_WEB_ORIGIN: ${{ vars.BADGERBOTS_WEB_ORIGIN }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -47,6 +48,7 @@ jobs:
           test -n "$SUPABASE_ACCESS_TOKEN"
           test -n "$SUPABASE_DB_URL"
           test -n "$SUPABASE_PROJECT_REF"
+          test "$BADGERBOTS_WEB_ORIGIN" = "https://henrydriley.com"
           case "$SUPABASE_DB_URL" in
             postgres://*|postgresql://*) ;;
             *) echo "SUPABASE_DB_URL must be a PostgreSQL connection URL." >&2; exit 1 ;;
@@ -78,6 +80,9 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-        run: >-
-          pnpm dlx supabase@2.109.1 functions deploy classroom-api
-          --project-ref "$SUPABASE_PROJECT_REF"
+        run: |
+          pnpm dlx supabase@2.109.1 secrets set \
+            "BADGERBOTS_WEB_ORIGINS=http://127.0.0.1:3000,http://localhost:3000,https://henrydriley.com" \
+            --project-ref "$SUPABASE_PROJECT_REF"
+          pnpm dlx supabase@2.109.1 functions deploy classroom-api \
+            --project-ref "$SUPABASE_PROJECT_REF"

@@ -28,6 +28,7 @@
     "test": "turbo run test && pnpm repository:test",
     "test:e2e": "turbo run test:e2e",
     "typecheck": "turbo run typecheck",
+    "web:package:classroom": "node tools/repository/src/package-classroom-web.mjs",
     "verify": "pnpm format:check && pnpm metadata:check && pnpm typecheck && pnpm lint && pnpm test && pnpm secret:scan"
   },
   "devDependencies": {

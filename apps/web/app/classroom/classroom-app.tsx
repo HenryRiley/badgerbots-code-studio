@@ -14,6 +14,7 @@ import {
   subscribeToClassroom,
   unbindWorkspace,
 } from "./classroom-api";
+import { devicePublicIdFromHash, urlWithoutDeviceFragment } from "./device-link";
 
 interface Profile {
   instructorId: string;
@@ -255,7 +256,7 @@ export function ClassroomApp() {
           <h1>Connected Classroom</h1>
         </div>
         <div className="button-row">
-          <Link className="secondary-button" href="/">
+          <Link className="secondary-button" href="/editor">
             Block editor
           </Link>
           {mode === "instructor" || mode === "student" ? (
@@ -320,10 +321,17 @@ function Landing(props: {
   const [firstName, setFirstName] = useState("");
   const [lastInitial, setLastInitial] = useState("");
   const [devicePublicId] = useState(() =>
-    typeof window === "undefined"
-      ? ""
-      : (new URLSearchParams(window.location.search).get("bbDevice") ?? ""),
+    typeof window === "undefined" ? "" : devicePublicIdFromHash(window.location.hash),
   );
+
+  useEffect(() => {
+    if (!devicePublicId || typeof window === "undefined") return;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      urlWithoutDeviceFragment(window.location),
+    );
+  }, [devicePublicId]);
 
   const instructorLogin = () =>
     props.perform(async () => {
@@ -805,7 +813,7 @@ function InstructorDashboard(props: {
               </button>
             </div>
             <div className="button-row">
-              <Link className="secondary-button" href="/" onClick={openWorkspace}>
+              <Link className="secondary-button" href="/editor" onClick={openWorkspace}>
                 Edit selected blocks
               </Link>
               <button className="secondary-button" onClick={() => void pushWorkspace()}>
@@ -958,7 +966,7 @@ function StudentWorkspace(props: {
       <div className="button-row">
         <Link
           className="primary-button"
-          href="/"
+          href="/editor"
           onClick={() =>
             bindWorkspace(
               {

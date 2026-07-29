@@ -41,6 +41,7 @@ interface SaveStatus {
 }
 
 export function CompilerHarness() {
+  const classroomHostedAtRoot = process.env.NEXT_PUBLIC_BADGERBOTS_CLASSROOM_AT_ROOT === "1";
   const [program, setProgram] = useState<Program>(() => structuredClone(sheepCityStarterProgram));
   const [activeScript, setActiveScript] = useState<ScriptKind>("player");
   const [mode, setMode] = useState<"blocks" | "text">("blocks");
@@ -401,18 +402,22 @@ export function CompilerHarness() {
           </div>
         </div>
         <div className="header-actions">
-          <Link className="header-link" href="/classroom">
+          <Link className="header-link" href={classroomHostedAtRoot ? "/" : "/classroom"}>
             Connected classroom
           </Link>
-          <Link className="header-link" href="/curriculum">
-            Curriculum lab
-          </Link>
-          <Link className="header-link" href="/prototype">
-            Connected prototype
-          </Link>
+          {classroomHostedAtRoot ? null : (
+            <>
+              <Link className="header-link" href="/curriculum">
+                Curriculum lab
+              </Link>
+              <Link className="header-link" href="/prototype">
+                Connected prototype
+              </Link>
+            </>
+          )}
           <div className="proof-badge">
             <span aria-hidden="true" />
-            Checkpoint 1 · browser only
+            {classroomHostedAtRoot ? "Internal classroom prototype" : "Checkpoint 1 · browser only"}
           </div>
         </div>
       </header>

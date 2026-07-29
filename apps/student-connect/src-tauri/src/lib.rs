@@ -118,8 +118,13 @@ fn open_coding_console(app: tauri::AppHandle) -> Result<String, String> {
                 .to_string(),
         );
     }
-    let separator = if base.contains('?') { '&' } else { '?' };
-    let url = format!("{base}{separator}bbDevice={}", identity.device_id);
+    if base.contains('#') {
+        return Err(
+            "This Connect build contains an invalid Code Studio web address. Install a current BadgerBots Connect build."
+                .to_string(),
+        );
+    }
+    let url = format!("{base}#bbDevice={}", identity.device_id);
     open_system_browser(&url)?;
     Ok("Code Studio opened in the default browser with this device securely linked.".to_string())
 }

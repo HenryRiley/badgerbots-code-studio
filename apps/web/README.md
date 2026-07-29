@@ -25,3 +25,8 @@ retain immediate local save and receive a 1.5-second cloud debounce.
 
 The route requires only browser-safe `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. It never receives a Secret/service-role key.
+
+The internal Apache prototype is built with `BADGERBOTS_CLASSROOM_STATIC_DEPLOYMENT=1`. That build
+serves the classroom UI at the export root, prefixes assets with `/classroom`, and is packaged by
+`pnpm web:package:classroom`. See `docs/apache-classroom-deployment.md`; this same-origin prototype
+is limited to synthetic camper data.
