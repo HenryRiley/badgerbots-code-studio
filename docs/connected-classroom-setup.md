@@ -81,6 +81,23 @@ These secrets stay in GitHub and are not passed to Host or Connect builds. Norma
 camp laptops do not need Git, Node.js, pnpm, PowerShell, the repository, or Supabase administrator
 access.
 
+### Complete disposable-pilot reset
+
+For a deliberately destructive test-only reset, use the two guarded operations in
+`database/operations/` from Supabase SQL Editor:
+
+1. `complete-test-pilot-reset.sql` empties all BadgerBots application tables after explicit
+   confirmation but does not modify Supabase-managed Auth tables.
+2. Delete old users through **Authentication → Users**, then create exactly one confirmed
+   replacement instructor.
+3. `bootstrap-existing-test-owner.sql` verifies that single confirmed identity and creates the new
+   organization, location, instructor, and owner membership without accepting a password in SQL.
+
+Do this from the owner’s administrative browser, never from a camp teacher laptop. It intentionally
+removes cloud Host pairing, sessions, camper/device mappings, workspaces, curriculum rows, audit
+history, and recovery payloads. It does not remove local Minecraft worlds or backups from an
+already-installed Host.
+
 The function defaults to the four local Code Studio origins. Before a hosted Web deployment, add its exact HTTPS origin:
 
 ```powershell

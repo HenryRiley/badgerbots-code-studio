@@ -168,4 +168,45 @@ describe("portable control-plane migration", () => {
     expect(workflow).not.toContain("VITE_BADGERBOTS_SUPABASE_SECRET");
     expect(workflow).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
+
+  it("guards the complete test reset and bootstraps exactly one confirmed replacement owner", async () => {
+    const reset = await readFile(
+      resolve(root, "database/operations/complete-test-pilot-reset.sql"),
+      "utf8",
+    );
+    const bootstrap = await readFile(
+      resolve(root, "database/operations/bootstrap-existing-test-owner.sql"),
+      "utf8",
+    );
+    for (const table of [
+      "classroom_commands",
+      "audit_records",
+      "active_worlds",
+      "program_versions",
+      "project_workspaces",
+      "campers",
+      "minecraft_mappings",
+      "devices",
+      "sessions",
+      "host_installations",
+      "memberships",
+      "instructors",
+      "locations",
+      "curriculum_versions",
+      "world_template_versions",
+      "organizations",
+      "owner_bootstrap_state",
+      "prototype_lab_recovery",
+    ]) {
+      expect(reset).toContain(`public.${table}`);
+    }
+    expect(reset).toContain("TYPE_CONFIRMATION_HERE");
+    expect(reset).toContain("RESET_BADGERBOTS_TEST_PILOT");
+    expect(reset).not.toContain("truncate table auth.");
+    expect(reset).not.toMatch(/\bdrop\s+(table|schema)\b/i);
+    expect(bootstrap).toContain("active_auth_user_count <> 1");
+    expect(bootstrap).toContain("email_confirmed_at is not null");
+    expect(bootstrap).toContain("perform public.bootstrap_owner");
+    expect(bootstrap).not.toMatch(/\b(password|encrypted_password)\s*:=/i);
+  });
 });
