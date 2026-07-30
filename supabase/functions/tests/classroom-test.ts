@@ -1,5 +1,6 @@
 import {
   createJoinCode,
+  deriveJoinCode,
   hmacHex,
   nativeHostOnboardingActionAllowed,
   sheepCityStarterProgram,
@@ -27,6 +28,25 @@ Deno.test("credential digests are deterministic without retaining the raw value"
   assertEquals(first.length, 64);
   assertEquals(first.includes("ABCD2345"), false);
   await assertRejects(() => hmacHex("short", "ABCD2345"));
+});
+
+Deno.test("session join codes are stable, readable, and distinct without database plaintext", async () => {
+  const secret = "test-only-credential-pepper-longer-than-thirty-two";
+  const first = await deriveJoinCode(
+    secret,
+    "11111111-1111-4111-8111-111111111111",
+  );
+  const again = await deriveJoinCode(
+    secret,
+    "11111111-1111-4111-8111-111111111111",
+  );
+  const second = await deriveJoinCode(
+    secret,
+    "22222222-2222-4222-8222-222222222222",
+  );
+  assertEquals(first, again);
+  assertEquals(first === second, false);
+  assertEquals(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/.test(first), true);
 });
 
 Deno.test("edge validation accepts the canonical starter and rejects oversized or unsafe shapes", () => {
