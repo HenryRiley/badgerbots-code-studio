@@ -120,8 +120,12 @@ async function route(
       return camperWorkspace(await requireCamper(request));
     case "workspace_state":
       return workspaceState(request, body);
+    case "workspace_versions":
+      return workspaceVersions(request, body);
     case "save_program":
       return saveProgram(request, body);
+    case "restore_program":
+      return restoreProgram(request, body);
     case "request_help":
       return requestHelp(await requireCamper(request), body);
     case "update_help":
@@ -724,6 +728,33 @@ async function workspaceState(
   return { workspace, latestCommand: command ?? null };
 }
 
+async function workspaceVersions(
+  request: Request,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const workspaceId = requiredString(body, "workspaceId", 64);
+  await requireWorkspaceActor(request, workspaceId);
+  const requestedLimit = body.limit;
+  const limit =
+    typeof requestedLimit === "number" && Number.isSafeInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 50)
+      : 30;
+  const { data, error } = await admin
+    .from("program_versions")
+    .select(
+      "id,workspace_id,revision,canonical_program,author_kind,restored_from_version_id,created_at",
+    )
+    .eq("workspace_id", workspaceId)
+    .order("revision", { ascending: false })
+    .limit(limit);
+  if (error) throw databaseError();
+  const versions = (data ?? []).map((version) => ({
+    ...version,
+    canonical_program: validateClassroomProgram(version.canonical_program),
+  }));
+  return { versions };
+}
+
 async function saveProgram(
   request: Request,
   body: Record<string, unknown>,
@@ -744,6 +775,57 @@ async function saveProgram(
     mutation_id: mutationId,
   });
   if (error) throw databaseError();
+  return { result: data };
+}
+
+async function restoreProgram(
+  request: Request,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const workspaceId = requiredString(body, "workspaceId", 64);
+  const sourceVersionId = requiredString(body, "sourceVersionId", 64);
+  const baseRevision = requiredRevision(body);
+  const mutationId = requiredString(body, "clientMutationId", 64);
+  const instructor = await requireInstructor(request);
+  const { data: workspace, error: workspaceError } = await admin
+    .from("project_workspaces")
+    .select("session_id")
+    .eq("id", workspaceId)
+    .single();
+  if (workspaceError || !workspace) throw databaseError();
+  await requireSessionInstructor(instructor.instructorId, workspace.session_id);
+  await assertSessionActive(workspace.session_id);
+  if (!/^[0-9a-f-]{36}$/i.test(sourceVersionId)) {
+    throw new ClassroomApiError(
+      400,
+      "invalid_input",
+      "sourceVersionId is invalid.",
+    );
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(mutationId)) {
+    throw new ClassroomApiError(
+      400,
+      "invalid_input",
+      "clientMutationId is invalid.",
+    );
+  }
+  const { data, error } = await admin.rpc("restore_program_version_v1", {
+    target_workspace_id: workspaceId,
+    source_version_id: sourceVersionId,
+    expected_revision: baseRevision,
+    version_author_id: instructor.instructorId,
+    mutation_id: mutationId,
+  });
+  if (error) {
+    if (error.message.includes("source version not found")) {
+      throw new ClassroomApiError(
+        404,
+        "version_not_found",
+        "That saved version is no longer available.",
+      );
+    }
+    throw databaseError();
+  }
   return { result: data };
 }
 

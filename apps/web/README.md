@@ -37,3 +37,10 @@ autosave as new canonical revisions; an unchanged student editor receives and co
 Realtime with a ten-second polling fallback. Unsynced student drafts fail closed rather than being
 overwritten. Assigned instructors can retrieve a stable weekly class code repeatedly; only its
 HMAC digest is stored.
+
+Checkpoint 24 adds explicit shared-edit conflict choices and version history. When a remote revision
+arrives while the local program has changed, the editor preserves the local draft and offers **Use
+revision** or **Keep my work as a new version**. The classroom drawer lists immutable revisions with
+actor kind, time, preview, and restore provenance. Instructor restore is atomic and creates a new
+revision; it never starts Minecraft automatically. Apply `database/migrations/0010_program_version_restore.sql`
+through the protected Supabase deployment workflow before testing this against the hosted API.
