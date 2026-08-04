@@ -37,6 +37,16 @@ export interface BoundWorkspaceState {
   } | null;
 }
 
+export interface ClassroomProgramVersion {
+  id: string;
+  workspace_id: string;
+  revision: number;
+  canonical_program: Program;
+  author_kind: "camper" | "instructor";
+  restored_from_version_id?: string | null;
+  created_at: string;
+}
+
 let browserClient: SupabaseClient | undefined;
 
 export function classroomConfigured(): boolean {
@@ -196,11 +206,16 @@ export async function loadBoundWorkspaceState(): Promise<BoundWorkspaceState | u
   return state;
 }
 
-export function acceptBoundWorkspaceProgram(program: Program, revision: number): boolean {
+export function acceptBoundWorkspaceProgram(
+  program: Program,
+  revision: number,
+  options: { force?: boolean } = {},
+): boolean {
   const binding = loadClassroomBinding();
   if (!binding) return false;
   const local = loadLocalEditorState(localStorage);
   if (
+    !options.force &&
     local.kind === "loaded" &&
     JSON.stringify(local.state.program) !== binding.programFingerprint
   ) {
@@ -221,6 +236,66 @@ export function acceptBoundWorkspaceProgram(program: Program, revision: number):
     workspaceDrafts: {},
   });
   return saved.ok;
+}
+
+/** Move the local optimistic-concurrency cursor without changing the local program. */
+export function acknowledgeBoundWorkspaceRevision(revision: number): boolean {
+  const binding = loadClassroomBinding();
+  if (!binding || revision < binding.revision) return false;
+  localStorage.setItem(
+    CLASSROOM_BINDING_KEY,
+    JSON.stringify({ ...binding, revision } satisfies ClassroomBinding),
+  );
+  return true;
+}
+
+export async function loadBoundWorkspaceVersions(limit = 30): Promise<ClassroomProgramVersion[]> {
+  const binding = loadClassroomBinding();
+  if (!binding) return [];
+  const result = await callClassroomApi<{ versions?: ClassroomProgramVersion[] }>(
+    "workspace_versions",
+    { workspaceId: binding.workspaceId, limit },
+  );
+  return (result.versions ?? []).map((version) => ({
+    ...version,
+    revision: Number(version.revision),
+  }));
+}
+
+export async function restoreBoundWorkspaceVersion(
+  versionId: string,
+): Promise<{ revision: number; versionId: string }> {
+  const binding = loadClassroomBinding();
+  if (!binding) throw new Error("This editor is not connected to a classroom workspace.");
+  const result = await callClassroomApi<{
+    result:
+      | { kind: "saved"; revision: number; version_id: string }
+      | {
+          kind: "revision_conflict";
+          actual_revision: number;
+        };
+  }>("restore_program", {
+    workspaceId: binding.workspaceId,
+    sourceVersionId: versionId,
+    baseRevision: binding.revision,
+    clientMutationId: crypto.randomUUID(),
+  });
+  if (result.result.kind === "revision_conflict") {
+    throw new Error(
+      `Cloud revision ${result.result.actual_revision} changed first. Refresh before restoring.`,
+    );
+  }
+  localStorage.setItem(
+    CLASSROOM_BINDING_KEY,
+    JSON.stringify({
+      ...binding,
+      revision: Number(result.result.revision),
+    } satisfies ClassroomBinding),
+  );
+  return {
+    revision: Number(result.result.revision),
+    versionId: result.result.version_id,
+  };
 }
 
 export async function autosaveBoundProgram(

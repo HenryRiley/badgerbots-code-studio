@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { sheepCityCompletedExample, sheepCityStarterProgram } from "@badgerbots/program-model";
 import { loadLocalEditorState, saveLocalEditorState } from "../local-editor-storage.js";
 import {
+  acknowledgeBoundWorkspaceRevision,
   acceptBoundWorkspaceProgram,
   bindWorkspace,
   loadClassroomBinding,
@@ -78,5 +79,30 @@ describe("bound classroom remote updates", () => {
     if (local.kind === "loaded") {
       expect(local.state.program).toEqual(sheepCityCompletedExample);
     }
+  });
+
+  it("can explicitly accept a remote revision after showing the conflict choice", () => {
+    const saved = saveLocalEditorState(localStorage, {
+      editorStateVersion: 1,
+      program: sheepCityCompletedExample,
+      workspaceDrafts: {},
+    });
+    expect(saved.ok).toBe(true);
+    expect(acceptBoundWorkspaceProgram(sheepCityStarterProgram, 4)).toBe(false);
+    expect(acceptBoundWorkspaceProgram(sheepCityStarterProgram, 4, { force: true })).toBe(true);
+    expect(loadClassroomBinding()?.revision).toBe(4);
+    expect(loadLocalEditorState(localStorage)).toMatchObject({
+      kind: "loaded",
+      state: { program: sheepCityStarterProgram },
+    });
+  });
+
+  it("rebases the concurrency cursor without overwriting local work", () => {
+    expect(acknowledgeBoundWorkspaceRevision(7)).toBe(true);
+    expect(loadClassroomBinding()?.revision).toBe(7);
+    expect(loadLocalEditorState(localStorage)).toMatchObject({
+      kind: "loaded",
+      state: { program: sheepCityStarterProgram },
+    });
   });
 });

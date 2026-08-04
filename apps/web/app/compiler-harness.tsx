@@ -28,16 +28,20 @@ import {
   type LocalEditorState,
 } from "./local-editor-storage";
 import {
+  acknowledgeBoundWorkspaceRevision,
   acceptBoundWorkspaceProgram,
   autosaveBoundProgram,
   callClassroomApi,
   classroomClient,
+  loadBoundWorkspaceVersions,
   loadBoundWorkspaceState,
   loadClassroomBinding,
+  restoreBoundWorkspaceVersion,
   subscribeToClassroom,
   unbindWorkspace,
   type BoundWorkspaceState,
   type ClassroomBinding,
+  type ClassroomProgramVersion,
 } from "./classroom/classroom-api";
 
 interface ConsoleEntry {
@@ -70,6 +74,14 @@ export function CompilerHarness() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [classroomBusy, setClassroomBusy] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string>();
+  const [pendingConflict, setPendingConflict] = useState<{
+    revision: number;
+    program: Program;
+  }>();
+  const [versions, setVersions] = useState<ClassroomProgramVersion[]>([]);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versionsBusy, setVersionsBusy] = useState(false);
+  const [previewVersionId, setPreviewVersionId] = useState<string>();
   const [consoleEntries, setConsoleEntries] = useState<ConsoleEntry[]>([
     {
       id: 1,
@@ -87,6 +99,7 @@ export function CompilerHarness() {
   });
   const commitWorkspaceRef = useRef<(() => boolean) | null>(null);
   const suppressBlocklyEvents = useRef(false);
+  const pendingRemoteRevision = useRef(0);
   const entryId = useRef(2);
 
   programRef.current = program;
@@ -98,6 +111,21 @@ export function CompilerHarness() {
       return [...current.slice(-7), { id: entryId.current++, tone, message }];
     });
   }, []);
+
+  const refreshVersions = useCallback(async () => {
+    if (!loadClassroomBinding()) return;
+    setVersionsBusy(true);
+    try {
+      setVersions(await loadBoundWorkspaceVersions());
+    } catch (caught) {
+      writeConsole(
+        "error",
+        `Version history could not load: ${caught instanceof Error ? caught.message : "unknown error"}.`,
+      );
+    } finally {
+      setVersionsBusy(false);
+    }
+  }, [writeConsole]);
 
   const persistEditorState = useCallback(
     (state: LocalEditorState, kind: SaveStatus["kind"] = "saved") => {
@@ -172,6 +200,7 @@ export function CompilerHarness() {
             });
             writeConsole("success", `Cloud autosave accepted revision ${result.revision}.`);
             setSyncNotice(`Code updated · revision ${result.revision}`);
+            void refreshVersions();
           } else if (result.kind === "conflict") {
             setSaveStatus({
               kind: "error",
@@ -181,6 +210,7 @@ export function CompilerHarness() {
               "error",
               `Cloud revision ${result.actualRevision} changed first. Your local blocks were preserved; return to Connected Classroom to review before retrying.`,
             );
+            setSyncNotice(`Revision ${result.actualRevision} needs your review`);
           }
         })
         .catch((caught: unknown) => {
@@ -195,7 +225,7 @@ export function CompilerHarness() {
         });
     }, 1_500);
     return () => window.clearTimeout(timeout);
-  }, [editorLoaded, program, writeConsole]);
+  }, [editorLoaded, program, refreshVersions, writeConsole]);
 
   const refreshCloudState = useCallback(async () => {
     const currentBinding = loadClassroomBinding();
@@ -211,15 +241,22 @@ export function CompilerHarness() {
     if (remoteRevision <= currentBinding.revision) return;
     const remoteProgram = next.workspace.canonical_program;
     if (!acceptBoundWorkspaceProgram(remoteProgram, remoteRevision)) {
-      setSyncNotice(
-        `Revision ${remoteRevision} is available, but your unsynced local draft was preserved`,
-      );
+      if (pendingRemoteRevision.current !== remoteRevision) {
+        pendingRemoteRevision.current = remoteRevision;
+        setPendingConflict({
+          revision: remoteRevision,
+          program: structuredClone(remoteProgram),
+        });
+      }
+      setSyncNotice(`Revision ${remoteRevision} is available · choose which code to keep`);
       setSaveStatus({
         kind: "error",
         message: `Remote revision ${remoteRevision} is waiting; local blocks were not overwritten`,
       });
       return;
     }
+    pendingRemoteRevision.current = 0;
+    setPendingConflict(undefined);
     const nextState: LocalEditorState = {
       editorStateVersion: 1,
       program: structuredClone(remoteProgram),
@@ -279,6 +316,123 @@ export function CompilerHarness() {
       await refreshCloudState();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Classroom command failed.";
+      setSyncNotice(message);
+      writeConsole("error", message);
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const acceptPendingRemote = () => {
+    const conflict = pendingConflict;
+    if (!conflict) return;
+    if (!acceptBoundWorkspaceProgram(conflict.program, conflict.revision, { force: true })) {
+      setSyncNotice("The instructor version could not replace this local draft.");
+      return;
+    }
+    const nextState: LocalEditorState = {
+      editorStateVersion: 1,
+      program: structuredClone(conflict.program),
+      workspaceDrafts: {},
+    };
+    editorStateRef.current = nextState;
+    programRef.current = conflict.program;
+    setProgram(conflict.program);
+    setText(formatProgram(conflict.program));
+    setWorkspaceSyncVersion((version) => version + 1);
+    setClassroomBinding(loadClassroomBinding());
+    setPendingConflict(undefined);
+    pendingRemoteRevision.current = 0;
+    setSaveStatus({
+      kind: "saved",
+      message: `Instructor revision ${conflict.revision} is now in this editor`,
+    });
+    setSyncNotice(`Code updated from instructor · revision ${conflict.revision}`);
+    writeConsole("success", `Accepted instructor revision ${conflict.revision}.`);
+    void refreshVersions();
+  };
+
+  const keepLocalAsNewVersion = async () => {
+    const conflict = pendingConflict;
+    if (!conflict) return;
+    setClassroomBusy(true);
+    try {
+      if (!commitWorkspaceRef.current?.()) {
+        throw new Error("Finish the current block edit before saving a new version.");
+      }
+      if (!acknowledgeBoundWorkspaceRevision(conflict.revision)) {
+        throw new Error("The revision cursor could not be updated; refresh and try again.");
+      }
+      const saved = await autosaveBoundProgram(programRef.current);
+      if (saved.kind !== "saved") {
+        throw new Error(
+          saved.kind === "conflict"
+            ? `Revision ${saved.actualRevision} changed again. Review the newest update.`
+            : "The local program was not saved as a new version.",
+        );
+      }
+      setClassroomBinding(loadClassroomBinding());
+      setPendingConflict(undefined);
+      pendingRemoteRevision.current = 0;
+      setSaveStatus({ kind: "saved", message: `Local work saved as revision ${saved.revision}` });
+      setSyncNotice(`Local work saved as a new version · revision ${saved.revision}`);
+      writeConsole("success", `Saved local work after the conflict as revision ${saved.revision}.`);
+      await refreshVersions();
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "The local version could not be saved.";
+      setSyncNotice(message);
+      writeConsole("error", message);
+    } finally {
+      setClassroomBusy(false);
+    }
+  };
+
+  const restoreVersion = async (version: ClassroomProgramVersion) => {
+    if (classroomBinding?.role !== "instructor") return;
+    setClassroomBusy(true);
+    try {
+      if (!commitWorkspaceRef.current?.()) {
+        throw new Error("Finish the current block edit before restoring a version.");
+      }
+      const saved = await autosaveBoundProgram(programRef.current);
+      if (saved.kind === "conflict") {
+        throw new Error(
+          `Revision ${saved.actualRevision} changed first. Resolve the update before restoring.`,
+        );
+      }
+      const restored = await restoreBoundWorkspaceVersion(version.id);
+      if (
+        !acceptBoundWorkspaceProgram(version.canonical_program, restored.revision, { force: true })
+      ) {
+        throw new Error("The restored program could not be loaded into the editor.");
+      }
+      const nextState: LocalEditorState = {
+        editorStateVersion: 1,
+        program: structuredClone(version.canonical_program),
+        workspaceDrafts: {},
+      };
+      editorStateRef.current = nextState;
+      programRef.current = version.canonical_program;
+      setProgram(version.canonical_program);
+      setText(formatProgram(version.canonical_program));
+      setWorkspaceSyncVersion((current) => current + 1);
+      setClassroomBinding(loadClassroomBinding());
+      setPendingConflict(undefined);
+      pendingRemoteRevision.current = 0;
+      setSaveStatus({
+        kind: "saved",
+        message: `Restored revision ${version.revision} as ${restored.revision}`,
+      });
+      setSyncNotice(`Restored revision ${version.revision} · new revision ${restored.revision}`);
+      writeConsole(
+        "success",
+        `Restored revision ${version.revision}. Run when you are ready; it was not started automatically.`,
+      );
+      await refreshVersions();
+    } catch (caught) {
+      const message =
+        caught instanceof Error ? caught.message : "The version could not be restored.";
       setSyncNotice(message);
       writeConsole("error", message);
     } finally {
@@ -583,6 +737,37 @@ export function CompilerHarness() {
         </div>
       ) : null}
 
+      {pendingConflict ? (
+        <section className="conflict-card" aria-label="Code update needs a choice">
+          <div>
+            <p className="eyebrow">Code update needs a choice</p>
+            <h2>Someone saved revision {pendingConflict.revision} while you were editing.</h2>
+            <p>
+              Your local blocks are safe. Choose the instructor version, or save your local work as
+              the next version so nothing is lost.
+            </p>
+          </div>
+          <div className="conflict-actions">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={classroomBusy}
+              onClick={acceptPendingRemote}
+            >
+              Use instructor revision {pendingConflict.revision}
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={classroomBusy}
+              onClick={() => void keepLocalAsNewVersion()}
+            >
+              Keep my work as a new version
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="workspace-card">
         <div className="workspace-toolbar">
           <div className="script-tabs" role="tablist" aria-label="Code areas">
@@ -832,6 +1017,79 @@ export function CompilerHarness() {
                 Return to instructor roster
               </Link>
             )}
+            <section className="drawer-section" aria-label="Program version history">
+              <div className="drawer-section-heading">
+                <div>
+                  <strong>Version history</strong>
+                  <span>Preview saved programs and restore without running.</span>
+                </div>
+                <button
+                  className="drawer-toggle"
+                  type="button"
+                  onClick={() => {
+                    const next = !versionsOpen;
+                    setVersionsOpen(next);
+                    if (next) void refreshVersions();
+                  }}
+                >
+                  {versionsOpen ? "Hide" : "View"}
+                </button>
+              </div>
+              {versionsOpen ? (
+                <div className="version-history">
+                  {versionsBusy ? <p className="drawer-muted">Loading saved versions…</p> : null}
+                  {!versionsBusy && versions.length === 0 ? (
+                    <p className="drawer-muted">
+                      No cloud versions yet. Save a change to create one.
+                    </p>
+                  ) : null}
+                  {versions.map((version) => {
+                    const previewing = previewVersionId === version.id;
+                    return (
+                      <article className="version-row" key={version.id}>
+                        <div>
+                          <strong>Revision {version.revision}</strong>
+                          <span>
+                            {version.author_kind === "instructor" ? "Instructor" : "Student"} ·{" "}
+                            {new Intl.DateTimeFormat(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            }).format(new Date(version.created_at))}
+                            {version.restored_from_version_id ? " · restored" : ""}
+                          </span>
+                        </div>
+                        <div className="version-row-actions">
+                          <button
+                            className="drawer-toggle"
+                            type="button"
+                            onClick={() => setPreviewVersionId(previewing ? undefined : version.id)}
+                          >
+                            {previewing ? "Close preview" : "Preview"}
+                          </button>
+                          {classroomBinding.role === "instructor" ? (
+                            <button
+                              className="drawer-toggle restore"
+                              type="button"
+                              disabled={classroomBusy}
+                              onClick={() => void restoreVersion(version)}
+                            >
+                              Restore
+                            </button>
+                          ) : null}
+                        </div>
+                        {previewing ? (
+                          <pre className="version-preview">
+                            {formatProgram(version.canonical_program)}
+                          </pre>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </section>
             <button className="drawer-signout" type="button" onClick={() => void leaveClassroom()}>
               Sign out of classroom
             </button>
